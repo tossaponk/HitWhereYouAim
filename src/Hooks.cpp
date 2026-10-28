@@ -343,9 +343,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 			float lookPitch = 0, lookYaw;
 			auto aimPos = player->GetPosition();
-
-			if( Settings::bEnabledPitchCorrection )
-				aimPos.z += player->GetInfoRuntimeData().eyeHeight;
+			aimPos.z += player->GetInfoRuntimeData().eyeHeight;
 
 			// Add penetration
 			lookTarget = ExtendVectorFromOrigin( aimPos, lookTarget, Settings::fRayPenetrationDepth * meterToGameUnit );
