@@ -8,6 +8,10 @@ bool Hooks::Install()
 	ConcentrationSpellAngleHook::Install();
 	PlayerSetAimPitchHook::Install();
 	PlayerUpdateHook::Install();
+	SpellRaycastTargetHook::Install();
+	TargetActorDesiredTargetHook::Install();
+	MagicCasterGetCrosshairActorHook::Install();
+	SpellTargetFinderHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
 
@@ -50,6 +54,11 @@ RE::TESObjectREFR* Hooks::GetCrosshairRaycastTarget( uint32_t a_collisionGroup, 
 	if( out_hitLocation ) *out_hitLocation = g_crosshairCache.position;
 	if( out_pickData ) *out_pickData = g_crosshairCache.pickData;
 	return g_crosshairCache.target;
+}
+
+RE::TESObjectREFR* Hooks::GetCrosshairRaycastTarget( const RE::CFilter& a_collisionFilter, RE::NiPoint3* out_hitLocation, RE::bhkPickData* out_pickData )
+{
+	return GetCrosshairRaycastTarget( a_collisionFilter.GetSystemGroup(), a_collisionFilter.GetCollisionLayer(), out_hitLocation, out_pickData);
 }
 
 template <class... Args>
@@ -298,14 +307,6 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 	float result = a_pitch;
 
 	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
-	if( Settings::IsCrosshairImpactDebugEnabled() )
-	{
-		auto currentTimeMS = RE::BSTimer::GetSingleton()->smoothedRunTimeMS;
-		if( rayImpactExpire > currentTimeMS && lastRayCoord != RE::NiPoint3::Zero() )
-			SetCrosshairToWorldPosition( lastRayCoord );
-		else
-			ResetCrosshairPosition();
-	}
 
 	// Try to make the aiming pose align with the target. Skip this for VATS
 	auto playerCamera = RE::PlayerCamera::GetSingleton();
@@ -501,4 +502,59 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 		if( !a_this->IsFlameProjectile() && !a_this->IsBeamProjectile() )
 			TrueHUDArrowTrail::BeginArrow( a_this );
 	}
+}
+
+void Hooks::SpellRaycastTargetHook::ReplaceRayDirection( RE::bhkPickData* a_pickData )
+{
+	auto camera = RE::Main::WorldRootCamera();
+	a_pickData->rayInput.from = camera->world.translate * havokScaling;
+
+	RE::NiPoint3 crosshairWorld;
+	float range = a_pickData->ray.Length3();
+	auto& filter = a_pickData->rayInput.filterInfo;
+	GetCrosshairRaycastTarget( filter.GetSystemGroup(), filter.GetCollisionLayer(), &crosshairWorld );
+
+	auto rayDirection = (crosshairWorld * havokScaling) - (RE::NiPoint3&)a_pickData->rayInput.from.quad;
+	rayDirection.Unitize();
+
+	a_pickData->ray = rayDirection * range;
+}
+
+void Hooks::SpellRaycastTargetHook::ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor )
+{
+	float range = a_pickData->ray.Length3();
+	RE::NiPoint3 hitCrosshair{ 0, 0, 0 };
+	RE::bhkPickData crosshairPickData;
+	RE::Actor* crosshairTarget = nullptr;
+
+	// Crosshair ray phase
+	{
+		auto pickTarget = GetCrosshairRaycastTarget( a_pickData->rayInput.filterInfo, &hitCrosshair, &crosshairPickData );
+		auto rayStart		= crosshairPickData.rayInput.from;
+		auto rayEnd			= crosshairPickData.rayInput.from + ( crosshairPickData.rayInput.to - crosshairPickData.rayInput.from ) * crosshairPickData.rayOutput.hitFraction;
+		TrueHUDArrowTrail::BeginRay(
+			HavokToWorld<RE::NiPoint3>( rayStart ),
+			HavokToWorld<RE::NiPoint3>( rayEnd ) );
+		
+		if( pickTarget )
+			crosshairTarget = pickTarget->As<RE::Actor>();
+	}
+
+	// Preserve crosshair miss on Target Actor delivery type.
+	if( a_useTargetActor && !crosshairTarget )
+	{
+		PickDataRayInputCopy( *a_pickData, crosshairPickData, range );
+		return;
+	}
+
+	// Aim the origin ray to the crosshair when crosshair hit something or the spell is Target Location delivery type.
+	auto handDirection = hitCrosshair - HavokToWorld<RE::NiPoint3>( a_origin );
+	handDirection.Unitize();
+
+	a_pickData->rayInput.from	= a_origin;
+	a_pickData->ray				= handDirection * range;
+
+	TrueHUDArrowTrail::BeginRay(
+		HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from ),
+		HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from + a_pickData->ray) );
 }

@@ -33,6 +33,11 @@ namespace Hooks
 		RE::NiPoint3* out_hitLocation = nullptr,
 		RE::bhkPickData* out_pickData = nullptr);
 
+	static inline RE::TESObjectREFR* GetCrosshairRaycastTarget(
+		const RE::CFilter& a_collisionFilter,
+		RE::NiPoint3* out_hitLocation = nullptr,
+		RE::bhkPickData* out_pickData = nullptr );
+
 	struct PlayerProjectileCalculateLaunchAngleHook
 	{
 		static float AngleDifference( float a_corrected, float a_original )
@@ -99,6 +104,104 @@ namespace Hooks
 
 			funcYawBeam = trampoline.write_call<5>( addr + 0xE, SetAimYawBeam );
 			funcPitchBeam = trampoline.write_call<5>( addr + 0x21, SetAimPitchBeam );
+		}
+	};
+
+	struct SpellTargetFinderHook
+	{
+		static inline thread_local bool		useTargetActor = false;
+		static RE::MagicTarget* thunk( RE::ActorMagicCaster* a_caster, bool a_useTargetActor, float a_range, RE::NiPoint3* a_outPosition, RE::TESObjectCELL** a_outCell, RE::bhkPickData* a_pickData )
+		{
+			useTargetActor = a_useTargetActor;
+
+			auto result = func( a_caster, a_useTargetActor, a_range, a_outPosition, a_outCell, a_pickData );
+
+			return result;
+
+		}
+		static inline REL::Relocation<decltype(thunk)> func;
+		static void Install()
+		{
+			auto addrActor		= REL::Relocation( REL::ID( 34410 ), 0x732 ).address();
+			auto addrLocation	= REL::Relocation( REL::ID( 34410 ), 0x30F ).address();
+
+			stl::write_thunk_call<SpellTargetFinderHook>( addrActor );
+			stl::write_thunk_call<SpellTargetFinderHook>( addrLocation );
+		}
+	};
+
+	struct SpellRaycastTargetHook
+	{
+		static void ReplaceRayDirection( RE::bhkPickData* a_pickData );
+		static void ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor );
+		static void thunk( RE::TESObjectCELL* a_cell, RE::bhkPickData* a_pickData )
+		{
+			if( Settings::bEnabled )
+			{
+				RE::hkVector4 castOrigin = a_pickData->rayInput.from;
+
+				// Resolve hand-path interception and select the final target
+				ResolveRayTarget( a_pickData, castOrigin, SpellTargetFinderHook::useTargetActor );
+			}
+
+			/*TrueHUDArrowTrail::BeginRay(
+				HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from ),
+				HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from + a_pickData->ray) );*/
+
+			// Perform native Havok pick
+			func( a_cell, a_pickData );
+
+			if( Settings::IsCrosshairImpactDebugEnabled() )
+			{
+				RE::hkVector4 hitLocation = a_pickData->rayInput.from + (a_pickData->rayInput.to - a_pickData->rayInput.from) * a_pickData->rayOutput.hitFraction;
+				hitLocation = hitLocation * ( 1.0f / havokScaling );
+				lastRayCoord = (RE::NiPoint3&)hitLocation.quad.m128_f32;
+				rayImpactExpire = GetCurrentGameRuntimeMS() + 5000;
+			}
+		}
+		static inline REL::Relocation<decltype(thunk)> func;
+		static void Install()
+		{
+			//auto addr = REL::Relocation( REL::ID( 34457 ), 0x732 ).address();
+			auto addr = REL::Relocation( REL::ID( 34457 ), 0x44B ).address();
+			stl::write_thunk_call<SpellRaycastTargetHook>( addr );
+		}
+	};
+
+	struct MagicCasterGetCrosshairActorHook
+	{
+		static void thunk( [[maybe_unused]]RE::ObjectRefHandle* a_handle, [[maybe_unused]]RE::NiPointer<RE::TESObjectREFR>* a_out )
+		{
+			// Intentionally nop this function to force raycasting
+			if( Settings::bEnabled )
+				return;
+
+			func( a_handle, a_out );
+		}
+		static inline REL::Relocation<decltype( thunk )> func;
+		static void Install()
+		{
+			// 1.6.1170 SkyrimSE.exe+5C0524
+			auto addr = REL::Relocation( REL::ID( 34457 ), 0xB4 ).address();
+			stl::write_thunk_call<MagicCasterGetCrosshairActorHook>( addr );
+		}
+	};
+
+	struct TargetActorDesiredTargetHook
+	{
+		static bool thunk( RE::ActorMagicCaster* a_caster, float a_effectivenessMult, uint32_t* a_targetCount, RE::TESBoundObject* a_source, bool a_loadCast, bool a_adjustOnlyHostileEffectiveness )
+		{
+			if( Settings::bEnabled && a_caster->GetCasterAsActor() == RE::PlayerCharacter::GetSingleton() )
+				a_caster->desiredTarget.reset();
+
+			return func( a_caster, a_effectivenessMult, a_targetCount, a_source, a_loadCast, a_adjustOnlyHostileEffectiveness );
+		}
+		static inline REL::Relocation<decltype( thunk )> func;
+		static void Install()
+		{
+			// 1.6.1170 SkyrimSE.exe+5BBE24
+			auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
+			stl::write_thunk_call<TargetActorDesiredTargetHook>( addr );
 		}
 	};
 
@@ -183,6 +286,15 @@ namespace Hooks
 			func( a_this, a_delta );
 			TrueHUDArrowTrail::Update();
 			CandidateBoundsDebug::Update();
+
+			if( Settings::IsCrosshairImpactDebugEnabled() )
+			{
+				auto currentTimeMS = RE::BSTimer::GetSingleton()->smoothedRunTimeMS;
+				if( rayImpactExpire > currentTimeMS && lastRayCoord != RE::NiPoint3::Zero() )
+					SetCrosshairToWorldPosition( lastRayCoord );
+				else
+					ResetCrosshairPosition();
+			}
 		}
 
 		static inline REL::Relocation<decltype( thunk )> func;
@@ -243,6 +355,30 @@ namespace Hooks
 
 	namespace Unused
 	{
+		// Temporarily reset the look target handle to force raycasting on Target Actor and Target Destination delivery type
+		struct MagicCasterFindTargetHook
+		{
+			static RE::MagicTarget* thunk( RE::ActorMagicCaster* a_caster, bool a_targetActor, float a_range, RE::NiPoint3* out_position, RE::TESObjectCELL* out_cell, RE::bhkPickData* a_pickData )
+			{
+				auto crosshairPickData = RE::CrosshairPickData::GetSingleton();
+				auto crosshairTarget = crosshairPickData->target;
+				crosshairPickData->target.reset();
+
+				auto result = func( a_caster, a_targetActor, a_range, out_position, out_cell, a_pickData );
+
+				crosshairPickData->target = crosshairTarget;
+
+				return result;
+			}
+			static inline REL::Relocation<decltype( thunk )> func;
+			static void Install()
+			{
+				// 1.6.1170 SkyrimSE.exe+5BC892 
+				auto addr = REL::Relocation( REL::ID( 34410 ), 0x732 ).address();
+				stl::write_thunk_call<MagicCasterFindTargetHook>( addr );
+			}
+		};
+
 		// 1.6.1170 44100	8273456	0x7E3E30 Projectile ctor -- Unused
 		struct ProjectileConstructorHook
 		{

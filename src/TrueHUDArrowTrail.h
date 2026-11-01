@@ -49,6 +49,33 @@ public:
 		active = true;
 	}
 
+	static void BeginRay( const RE::NiPoint3& a_start, const RE::NiPoint3& a_end )
+	{
+		std::scoped_lock lock( trailMutex );
+
+		projectileHandle.reset();
+		worldTrailPoints.clear();
+		active = false;
+
+		RE::NiPoint3 delta = a_end - a_start;
+		float length = delta.Length();
+
+		if( length <= 0.001f )
+			return;
+
+		float pointDistance = std::max( minimumPointDistance, 1.0f );
+		size_t segmentCount = (size_t)std::ceil( length / pointDistance );
+		segmentCount = std::clamp<size_t>( segmentCount, 1, maximumPointCount - 1 );
+
+		worldTrailPoints.reserve( segmentCount + 1 );
+
+		for( size_t i = 0; i <= segmentCount; i++ )
+		{
+			float t = i / (float)segmentCount;
+			worldTrailPoints.push_back( a_start + delta * t );
+		}
+	}
+
 	static void Update()
 	{
 		if( !enabled || !trueHUD )

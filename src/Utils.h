@@ -952,4 +952,53 @@ static conditionFunc_t* GetConditionFunctionEntry( RE::FUNCTION_DATA::FunctionID
 	return *reinterpret_cast<conditionFunc_t**>( functionTable + (uint32_t)a_id * stride );
 }
 
+static void PickDataRayInputCopy( RE::bhkPickData& a_dst, RE::bhkPickData& a_src, float a_havokRange = FLT_MAX )
+{
+	float originalRange = a_dst.ray.Length3();
+	a_dst.rayInput	= a_src.rayInput;
+
+	if( a_havokRange != FLT_MAX )
+	{
+		auto rayDirection = a_dst.rayInput.to - a_dst.rayInput.from;
+		rayDirection = rayDirection / rayDirection.Length3();
+
+		a_dst.ray = rayDirection * a_havokRange;
+	}
+	else
+	{
+		a_dst.ray = a_dst.rayInput.to - a_dst.rayInput.from;
+	}
+
+	float newRange = a_dst.ray.Length3();
+	REX::DEBUG( "RayInputCopy - Range: Old {} New {}", originalRange, newRange );
+}
+
+static float GetCameraRayRange( const RE::NiPoint3& a_cameraPosition, const RE::NiPoint3& a_cameraDirection, const RE::NiPoint3& a_rangeOrigin, float a_range )
+{
+	auto offset = a_cameraPosition - a_rangeOrigin;
+	float projection = offset.Dot( a_cameraDirection );
+	float discriminant = projection * projection + a_range * a_range - offset.SqrLength();
+
+	if( discriminant <= 0.0f )
+		return 0.0f;
+
+	return -projection + sqrt( discriminant );
+}
+
+template<typename T=RE::hkVector4>
+static T HavokToWorld( const RE::hkVector4& a_coord )
+{
+	T result = (T&)a_coord;
+
+	return result / havokScaling;
+}
+
+template<typename T=RE::hkVector4>
+static T WorldToHavok( const RE::hkVector4& a_coord )
+{
+	T result = (T&)a_coord;
+
+	return result * havokScaling;
+}
+
 #pragma warning(pop)
