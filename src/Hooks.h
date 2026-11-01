@@ -110,11 +110,11 @@ namespace Hooks
 	struct SpellTargetFinderHook
 	{
 		static inline thread_local bool		useTargetActor = false;
-		static RE::MagicTarget* thunk( RE::ActorMagicCaster* a_caster, bool a_useTargetActor, float a_range, RE::NiPoint3* a_outPosition, RE::TESObjectCELL** a_outCell, RE::bhkPickData* a_pickData )
+		static RE::MagicTarget* thunk( RE::ActorMagicCaster* a_caster, bool a_useTargetActor, float a_range, RE::NiPoint3* out_position, RE::TESObjectCELL** out_cell, RE::bhkPickData* a_pickData )
 		{
 			useTargetActor = a_useTargetActor;
 
-			auto result = func( a_caster, a_useTargetActor, a_range, a_outPosition, a_outCell, a_pickData );
+			auto result = func( a_caster, a_useTargetActor, a_range, out_position, out_cell, a_pickData );
 
 			return result;
 
@@ -122,17 +122,46 @@ namespace Hooks
 		static inline REL::Relocation<decltype(thunk)> func;
 		static void Install()
 		{
-			auto addrActor		= REL::Relocation( REL::ID( 34410 ), 0x732 ).address();
-			auto addrLocation	= REL::Relocation( REL::ID( 34410 ), 0x30F ).address();
+			// SE 33632
+			//auto addrActor = REL::Relocation( REL::ID( 34410 ), 0x732 ).address();
+			//auto addrLocation	= REL::Relocation( REL::ID( 34410 ), 0x30F ).address();
+
+			// First shared target-finder call: Target Location
+			// 1.6.1170 SkyrimSE.exe+5BC46F
+			auto addrLocation = util::GetInjectionAddress( RELOCATION_RAW( 33632, 34410 ),
+				"48 89 ?? 24 ?? 48 8D 44 24 ?? 48 89 ?? 24 ?? 4C 8D 4C 24 ?? 48 8B ?? E8 ?? ?? ?? ??",
+				0x17, "E8" );
+
+			// Second shared target-finder call: Target Actor (test rax,rax at the end)
+			// 1.6.1170 SkyrimSE.exe+5BC892
+			auto addrActor = util::GetInjectionAddress( RELOCATION_RAW( 33632, 34410 ),
+				"48 89 ?? 24 ?? 48 8D 44 24 ?? 48 89 ?? 24 ?? 4C 8D 4C 24 ?? 48 8B ?? E8 ?? ?? ?? ?? 48 85 C0",
+				0x17, "E8" );
+
+			if( !addrLocation )
+				REX::FAIL( "Cannot find target instruction for SpellTargetFinderHook(Target Location)" );
+
+			if( !addrActor )
+				REX::FAIL( "Cannot find target instruction for SpellTargetFinderHook(Target Actor)" );
+
+			if( addrLocation >= addrActor )
+				REX::FAIL( "Unexpected Target Location and Target Actor call order" );
 
 			stl::write_thunk_call<SpellTargetFinderHook>( addrActor );
+			auto funcActor = func.address();
+
 			stl::write_thunk_call<SpellTargetFinderHook>( addrLocation );
+			if( funcActor != func.address() )
+			{
+				REX::FAIL( "Target Actor and Target Location calls have different destinations" );
+			}
 		}
 	};
 
 	struct SpellRaycastTargetHook
 	{
-		static void ReplaceRayDirection( RE::bhkPickData* a_pickData );
+		// This is shared by both Target Actor and Target Location delivery type.
+		// The exact delivery type is captured from the outer call
 		static void ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor );
 		static void thunk( RE::TESObjectCELL* a_cell, RE::bhkPickData* a_pickData )
 		{
@@ -162,15 +191,22 @@ namespace Hooks
 		static inline REL::Relocation<decltype(thunk)> func;
 		static void Install()
 		{
-			//auto addr = REL::Relocation( REL::ID( 34457 ), 0x732 ).address();
-			auto addr = REL::Relocation( REL::ID( 34457 ), 0x44B ).address();
+			// SE 33677
+			// 1.6.1170 SkyrimSE.exe+5C08BB
+			//auto addr = REL::Relocation( REL::ID( 34457 ), 0x44B ).address();
+			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33677, 34457 ),
+				"48 8B 05 ?? ?? ?? ?? 49 8B ?? 48 8B ?? 60 E8 ?? ?? ?? ?? F3 0F 10 05 ?? ?? ?? ??", 0x0E, "E8" );
+
+			if( !addr )
+				REX::FAIL( "Cannot find target instruction for SpellRaycastTargetHook" );
+
 			stl::write_thunk_call<SpellRaycastTargetHook>( addr );
 		}
 	};
 
 	struct MagicCasterGetCrosshairActorHook
 	{
-		static void thunk( [[maybe_unused]]RE::ObjectRefHandle* a_handle, [[maybe_unused]]RE::NiPointer<RE::TESObjectREFR>* a_out )
+		static void thunk( RE::ObjectRefHandle* a_handle, RE::NiPointer<RE::TESObjectREFR>* a_out )
 		{
 			// Intentionally nop this function to force raycasting
 			if( Settings::bEnabled )
@@ -182,7 +218,12 @@ namespace Hooks
 		static void Install()
 		{
 			// 1.6.1170 SkyrimSE.exe+5C0524
-			auto addr = REL::Relocation( REL::ID( 34457 ), 0xB4 ).address();
+			//auto addr = REL::Relocation( REL::ID( 34457 ), 0xB4 ).address();
+			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33677, 34457 ), "48 8D 54 24 ?? 48 8D ?? ?? ?? ?? ?? E8 ?? ?? ?? ??", 0x0C, "E8" );
+
+			if( !addr )
+				REX::FAIL( "Cannot find target instruction for MagicCasterGetCrosshairActorHook" );
+
 			stl::write_thunk_call<MagicCasterGetCrosshairActorHook>( addr );
 		}
 	};
@@ -199,8 +240,16 @@ namespace Hooks
 		static inline REL::Relocation<decltype( thunk )> func;
 		static void Install()
 		{
+			// SE 33629
 			// 1.6.1170 SkyrimSE.exe+5BBE24
-			auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
+			//auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
+			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33629, 34407 ),
+				"4C 8D 44 24 ?? C6 44 24 ?? 00 4D 8B ?? 48 8B ?? C6 44 24 ?? 00 C7 44 24 ?? 00 00 00 00 E8 ?? ?? ?? ?? 84 C0",
+				0x1D, "E8" );
+
+			if( !addr )
+				REX::FAIL( "Cannot find target instruction for TargetActorDesiredTargetHook" );
+
 			stl::write_thunk_call<TargetActorDesiredTargetHook>( addr );
 		}
 	};

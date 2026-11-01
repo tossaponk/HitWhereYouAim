@@ -504,22 +504,6 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 	}
 }
 
-void Hooks::SpellRaycastTargetHook::ReplaceRayDirection( RE::bhkPickData* a_pickData )
-{
-	auto camera = RE::Main::WorldRootCamera();
-	a_pickData->rayInput.from = camera->world.translate * havokScaling;
-
-	RE::NiPoint3 crosshairWorld;
-	float range = a_pickData->ray.Length3();
-	auto& filter = a_pickData->rayInput.filterInfo;
-	GetCrosshairRaycastTarget( filter.GetSystemGroup(), filter.GetCollisionLayer(), &crosshairWorld );
-
-	auto rayDirection = (crosshairWorld * havokScaling) - (RE::NiPoint3&)a_pickData->rayInput.from.quad;
-	rayDirection.Unitize();
-
-	a_pickData->ray = rayDirection * range;
-}
-
 void Hooks::SpellRaycastTargetHook::ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor )
 {
 	float range = a_pickData->ray.Length3();
@@ -530,11 +514,15 @@ void Hooks::SpellRaycastTargetHook::ResolveRayTarget( RE::bhkPickData* a_pickDat
 	// Crosshair ray phase
 	{
 		auto pickTarget = GetCrosshairRaycastTarget( a_pickData->rayInput.filterInfo, &hitCrosshair, &crosshairPickData );
-		auto rayStart		= crosshairPickData.rayInput.from;
-		auto rayEnd			= crosshairPickData.rayInput.from + ( crosshairPickData.rayInput.to - crosshairPickData.rayInput.from ) * crosshairPickData.rayOutput.hitFraction;
-		TrueHUDArrowTrail::BeginRay(
-			HavokToWorld<RE::NiPoint3>( rayStart ),
-			HavokToWorld<RE::NiPoint3>( rayEnd ) );
+
+		if( Settings::bShowLastProjectilePath )
+		{
+			auto rayStart		= crosshairPickData.rayInput.from;
+			auto rayEnd			= crosshairPickData.rayInput.from + ( crosshairPickData.rayInput.to - crosshairPickData.rayInput.from ) * crosshairPickData.rayOutput.hitFraction;
+			TrueHUDArrowTrail::BeginRay(
+				HavokToWorld<RE::NiPoint3>( rayStart ),
+				HavokToWorld<RE::NiPoint3>( rayEnd ) );
+		}
 		
 		if( pickTarget )
 			crosshairTarget = pickTarget->As<RE::Actor>();
@@ -554,7 +542,10 @@ void Hooks::SpellRaycastTargetHook::ResolveRayTarget( RE::bhkPickData* a_pickDat
 	a_pickData->rayInput.from	= a_origin;
 	a_pickData->ray				= handDirection * range;
 
-	TrueHUDArrowTrail::BeginRay(
-		HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from ),
-		HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from + a_pickData->ray) );
+	if( Settings::bShowLastProjectilePath )
+	{
+		TrueHUDArrowTrail::BeginRay(
+			HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from ),
+			HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from + a_pickData->ray) );
+	}
 }
