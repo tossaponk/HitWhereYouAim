@@ -254,7 +254,6 @@ namespace Hooks
 		}
 	};
 
-	static float currentPitch = FLT_MAX;
 	struct PlayerSetAimPitchHook
 	{
 		static float PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch );

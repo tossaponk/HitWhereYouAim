@@ -302,6 +302,7 @@ float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectil
 	return func( a_projectile, a_angle );
 }
 
+static float currentPitch = FLT_MAX;
 float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch )
 {
 	float result = a_pitch;
@@ -312,16 +313,20 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 	auto playerCamera = RE::PlayerCamera::GetSingleton();
 	auto currentCameraState = playerCamera->currentState ? playerCamera->currentState.get() : nullptr;
 	bool isVATSPlaying = currentCameraState && currentCameraState->id == RE::CameraState::kVATS;
-	if( Settings::bEnabled && a_process == player->GetActorRuntimeData().currentProcess )
+	bool isThirdPerson = currentCameraState && currentCameraState->id == RE::CameraState::kThirdPerson;
+	if( Settings::bEnabled && isThirdPerson && a_process == player->GetActorRuntimeData().currentProcess )
 	{
 		// Initialize
 		if( currentPitch == FLT_MAX )
 			currentPitch = a_pitch;
 
-		if( player->AsActorState()->IsWeaponDrawn() &&
-			player->AsActorState()->GetAttackState() >= RE::ATTACK_STATE_ENUM::kBowDraw &&
-			player->AsActorState()->GetAttackState() <= RE::ATTACK_STATE_ENUM::kBowFollowThrough &&
-			!isVATSPlaying )
+		auto actorState = player->AsActorState();
+		bool isUsingRangedAttack = actorState->IsWeaponDrawn() &&
+			actorState->GetAttackState() >= RE::ATTACK_STATE_ENUM::kBowDraw &&
+			actorState->GetAttackState() <= RE::ATTACK_STATE_ENUM::kBowFollowThrough;
+
+		bool shouldCorrectAimPitch = isUsingRangedAttack || Settings::bAlwaysCorrectAimPitch;
+		if( shouldCorrectAimPitch && !isVATSPlaying )
 		{
 			//auto camera				= RE::Main::WorldRootCamera();
 			auto screenSize			= RE::BSGraphics::Renderer::GetSingleton()->GetScreenSize();
@@ -344,13 +349,12 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 			float lookPitch = 0, lookYaw;
 			auto aimPos = player->GetPosition();
-			aimPos.z += player->GetInfoRuntimeData().eyeHeight;
+			//aimPos.z += player->GetInfoRuntimeData().eyeHeight;
+			auto aimHeight = player->IsSneaking() ? Settings::fSneakingAimHeight : Settings::fStandingAimHeight;
+			aimPos.z += aimHeight * meterToGameUnit * player->GetScale();
 
 			// Add penetration
 			lookTarget = ExtendVectorFromOrigin( aimPos, lookTarget, Settings::fRayPenetrationDepth * meterToGameUnit );
-
-			// Add z-bias
-			lookTarget.z += Settings::fHeightBias;
 
 			// 3rd person model firing angle adjustment
 			bool isAngleCalculated = false;

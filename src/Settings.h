@@ -100,6 +100,9 @@ struct Settings
 	static inline float		fPredictionWindowHeight;
 	static inline bool		bInheritVelocity;
 
+	// Compatibility
+	static inline bool		bAlwaysCorrectAimPitch;
+
 	// Calibration
 	static inline float		fMaximumTargetDistance;
 	static inline float		fArcheryPitchCalibration;
@@ -109,10 +112,11 @@ struct Settings
 
 	// 3rd-person angle correction
 	static inline float		fPitchBias;
-	static inline float		fHeightBias;
 	static inline float		fBiasFadingStart;
 	static inline float		fMaxPitchAdjustmentSpeed;
 	static inline float		fMountedYawTolerance;
+	static inline float		fStandingAimHeight;
+	static inline float		fSneakingAimHeight;
 
 	// Debug
 	static inline bool		bEnableLogging;

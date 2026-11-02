@@ -10,16 +10,17 @@ void Settings::Load()
 		REX::FAIL( "Data/MCM/Config/HitWhereYouAim/settings.ini is missing!" );
 
 	auto settings = GetSingleton();
-	settings->RegisterBinding( { &bEnabled,					Settings::BindingType::kBoolean,	"Main", "bEnabled",					true } );
-	settings->RegisterBinding( { &bEnabledPitchCorrection,	Settings::BindingType::kBoolean,	"Main", "bEnabledPitchCorrection",	true } );
-	settings->RegisterBinding( { &iPitchCorrectionMode,		Settings::BindingType::kInteger,	"Main", "iPitchCorrectionMode",		1 } );
-	settings->RegisterBinding( { &fPitchOffsetDegree,		Settings::BindingType::kFloat,		"Main", "fPitchOffsetDegree",		0.7f } );
-	settings->RegisterBinding( { &bTargetDepthPrediction,	Settings::BindingType::kBoolean,	"Main", "bTargetDepthPrediction",	true } );
-	settings->RegisterBinding( { &fPredictionWindowWidth,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowWidth",	0.5f } );
-	settings->RegisterBinding( { &fPredictionWindowHeight,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowHeight",	0.5f } );
-	settings->RegisterBinding( { &bEnabledTargetLeading,	Settings::BindingType::kBoolean,	"Main", "bEnabledTargetLeading",	true } );
-	settings->RegisterBinding( { &fMaxLeadingAngle,			Settings::BindingType::kFloat,		"Main", "fMaxLeadingAngle",			45.0f } );
-	settings->RegisterBinding( { &bInheritVelocity,			Settings::BindingType::kBoolean,	"Main", "bInheritVelocity",			false } );
+	settings->RegisterBinding( { &bEnabled,					Settings::BindingType::kBoolean,	"Main", "bEnabled",						true } );
+	settings->RegisterBinding( { &bEnabledPitchCorrection,	Settings::BindingType::kBoolean,	"Main", "bEnabledPitchCorrection",		true } );
+	settings->RegisterBinding( { &iPitchCorrectionMode,		Settings::BindingType::kInteger,	"Main", "iPitchCorrectionMode",			1 } );
+	settings->RegisterBinding( { &fPitchOffsetDegree,		Settings::BindingType::kFloat,		"Main", "fPitchOffsetDegree",			0.7f } );
+	settings->RegisterBinding( { &bTargetDepthPrediction,	Settings::BindingType::kBoolean,	"Main", "bTargetDepthPrediction",		true } );
+	settings->RegisterBinding( { &fPredictionWindowWidth,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowWidth",		0.5f } );
+	settings->RegisterBinding( { &fPredictionWindowHeight,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowHeight",		0.5f } );
+	settings->RegisterBinding( { &bEnabledTargetLeading,	Settings::BindingType::kBoolean,	"Main", "bEnabledTargetLeading",		true } );
+	settings->RegisterBinding( { &fMaxLeadingAngle,			Settings::BindingType::kFloat,		"Main", "fMaxLeadingAngle",				45.0f } );
+	settings->RegisterBinding( { &bInheritVelocity,			Settings::BindingType::kBoolean,	"Main", "bInheritVelocity",				false } );
+	settings->RegisterBinding( { &bAlwaysCorrectAimPitch,	Settings::BindingType::kBoolean,	"Main", "bAlwaysCorrectAimPitch",		false } );
 
 	settings->RegisterBinding( { &fMaximumTargetDistance,	Settings::BindingType::kFloat,		"Calibration", "fMaximumTargetDistance",	100.0f } );
 	settings->RegisterBinding( { &fArcheryPitchCalibration,	Settings::BindingType::kFloat,		"Calibration", "fArcheryPitchCalibration",	0.02f } );
@@ -28,10 +29,11 @@ void Settings::Load()
 	settings->RegisterBinding( { &fRayPenetrationDepth,		Settings::BindingType::kFloat,		"Calibration", "fRayPenetrationDepth",		0.2f } );
 
 	settings->RegisterBinding( { &fPitchBias,				Settings::BindingType::kFloat,		"AngleCorrection", "fPitchBias",				0.0f } );
-	settings->RegisterBinding( { &fHeightBias,				Settings::BindingType::kFloat,		"AngleCorrection", "fHeightBias",				0.0f } );
 	settings->RegisterBinding( { &fBiasFadingStart,			Settings::BindingType::kFloat,		"AngleCorrection", "fBiasFadingStart",			45.0f } );
 	settings->RegisterBinding( { &fMaxPitchAdjustmentSpeed,	Settings::BindingType::kFloat,		"AngleCorrection", "fMaxPitchAdjustmentSpeed",	360.0f } );
 	settings->RegisterBinding( { &fMountedYawTolerance,		Settings::BindingType::kFloat,		"AngleCorrection", "fMountedYawTolerance",		15.0f } );
+	settings->RegisterBinding( { &fStandingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fStandingAimHeight",		1.5f } );
+	settings->RegisterBinding( { &fSneakingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fSneakingAimHeight",		1.0f } );
 
 	settings->RegisterBinding( { &bEnableLogging,			Settings::BindingType::kBoolean,	"Debug", "bEnableLogging",				false } );
 	settings->RegisterBinding( { &bShowTargetPredictionInfo,Settings::BindingType::kBoolean,	"Debug", "bShowTargetPredictionInfo",	false } );
