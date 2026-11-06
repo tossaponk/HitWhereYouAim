@@ -9,7 +9,6 @@ bool Hooks::Install()
 	PlayerSetAimPitchHook::Install();
 	PlayerUpdateHook::Install();
 	SpellRaycastTargetHook::Install();
-	TargetActorDesiredTargetHook::Install();
 	MagicCasterGetCrosshairActorHook::Install();
 	SpellTargetFinderHook::Install();
 
@@ -118,7 +117,7 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 		RE::bhkPickData pickData;
 		auto target = GetCrosshairRaycastTarget(
 			a_projectile->GetCollisionGroup(),
-			a_projectile->GetProjectileRuntimeData().spell ? RE::COL_LAYER::kSpell : RE::COL_LAYER::kProjectile,
+			RE::COL_LAYER::kLOS,
 			&aimLocation,
 			&pickData );
 
@@ -342,7 +341,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				crosshairX,
 				crosshairY,
 				filter.GetSystemGroup(),
-				RE::COL_LAYER::kProjectile,
+				RE::COL_LAYER::kLOS,
 				&lookTarget,
 				nullptr,
 				Settings::fMaximumTargetDistance * meterToGameUnit );
@@ -360,13 +359,17 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			bool isAngleCalculated = false;
 			if( Settings::IsAutomaticPitchEnabled() )
 			{
-				auto projectile			= player->GetCurrentAmmo()->GetRuntimeData().data.projectile;
-				auto projectileSpeed	= projectile ? projectile->data.speed : 0;
-				auto projectileGravity	= projectile ? projectile->data.gravity : 0;
-				isAngleCalculated = SolveBallisticIntercept( 
-					aimPos, lookTarget, nullptr,
-					projectileSpeed, projectileGravity * GetWorldGravity(), 
-					&lookTarget, &lookPitch, &lookYaw );
+				auto ammo = player->GetCurrentAmmo();
+				auto projectile = ammo ? ammo->GetRuntimeData().data.projectile : nullptr;
+				if( projectile )
+				{
+					auto projectileSpeed	= projectile->data.speed;
+					auto projectileGravity	= projectile->data.gravity;
+					isAngleCalculated = SolveBallisticIntercept( 
+						aimPos, lookTarget, nullptr,
+						projectileSpeed, projectileGravity * GetWorldGravity(), 
+						&lookTarget, &lookPitch, &lookYaw );
+				}
 			}
 			
 			if( !isAngleCalculated )

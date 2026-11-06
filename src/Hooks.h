@@ -228,32 +228,6 @@ namespace Hooks
 		}
 	};
 
-	struct TargetActorDesiredTargetHook
-	{
-		static bool thunk( RE::ActorMagicCaster* a_caster, float a_effectivenessMult, uint32_t* a_targetCount, RE::TESBoundObject* a_source, bool a_loadCast, bool a_adjustOnlyHostileEffectiveness )
-		{
-			if( Settings::bEnabled && a_caster->GetCasterAsActor() == RE::PlayerCharacter::GetSingleton() )
-				a_caster->desiredTarget.reset();
-
-			return func( a_caster, a_effectivenessMult, a_targetCount, a_source, a_loadCast, a_adjustOnlyHostileEffectiveness );
-		}
-		static inline REL::Relocation<decltype( thunk )> func;
-		static void Install()
-		{
-			// SE 33629
-			// 1.6.1170 SkyrimSE.exe+5BBE24
-			//auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33629, 34407 ),
-				"4C 8D 44 24 ?? C6 44 24 ?? 00 4D 8B ?? 48 8B ?? C6 44 24 ?? 00 C7 44 24 ?? 00 00 00 00 E8 ?? ?? ?? ?? 84 C0",
-				0x1D, "E8" );
-
-			if( !addr )
-				REX::FAIL( "Cannot find target instruction for TargetActorDesiredTargetHook" );
-
-			stl::write_thunk_call<TargetActorDesiredTargetHook>( addr );
-		}
-	};
-
 	struct PlayerSetAimPitchHook
 	{
 		static float PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch );
@@ -403,6 +377,38 @@ namespace Hooks
 
 	namespace Unused
 	{
+		// DANGER: Do not enabled
+		// Resetting desiredTarget cause the kInstant MagicCaster to target the caster instead of the target.
+		// This cause the player to be hit with own poison when attacking the NPC with it.
+		// Target Actor delivery spells will skip raycasting if desiredTarget is not empty.
+		// But this is always empty during tests with auto-aim disabled. Probably set by the auto-aim function.
+		// This is also used by VATS concentration magic killmove. It's set to the victim of the spell in 1.7.x onward.
+		struct ActorMagicCasterDesiredTargetHook
+		{
+			static bool thunk( RE::ActorMagicCaster* a_caster, float a_effectivenessMult, uint32_t* a_targetCount, RE::TESBoundObject* a_source, bool a_loadCast, bool a_adjustOnlyHostileEffectiveness )
+			{
+				if( Settings::bEnabled && a_caster->GetCasterAsActor() == RE::PlayerCharacter::GetSingleton() )
+					a_caster->desiredTarget.reset();
+
+				return func( a_caster, a_effectivenessMult, a_targetCount, a_source, a_loadCast, a_adjustOnlyHostileEffectiveness );
+			}
+			static inline REL::Relocation<decltype( thunk )> func;
+			static void Install()
+			{
+				// SE 33629
+				// 1.6.1170 SkyrimSE.exe+5BBE24
+				//auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
+				auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33629, 34407 ),
+					"4C 8D 44 24 ?? C6 44 24 ?? 00 4D 8B ?? 48 8B ?? C6 44 24 ?? 00 C7 44 24 ?? 00 00 00 00 E8 ?? ?? ?? ?? 84 C0",
+					0x1D, "E8" );
+
+				if( !addr )
+					REX::FAIL( "Cannot find target instruction for ActorMagicCasterDesiredTargetHook" );
+
+				stl::write_thunk_call<ActorMagicCasterDesiredTargetHook>( addr );
+			}
+		};
+
 		// Temporarily reset the look target handle to force raycasting on Target Actor and Target Destination delivery type
 		struct MagicCasterFindTargetHook
 		{
