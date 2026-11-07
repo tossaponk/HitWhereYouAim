@@ -1001,4 +1001,248 @@ static T WorldToHavok( const RE::hkVector4& a_coord )
 	return result * havokScaling;
 }
 
+static RE::TESObjectREFR* PredictRangedProjectileHit( RE::Actor* a_actor, RE::ActorMagicCaster* a_magicCaster, RE::TESObjectREFR* a_explicitTarget, bool a_isLeftHand )
+{
+	using func_t = decltype(&PredictRangedProjectileHit);
+	static REL::Relocation<func_t> func{ RELOCATION_ID(38639, 38639) };
+	return func( a_actor, a_magicCaster, a_explicitTarget, a_isLeftHand );
+}
+
+template<typename T>
+static T* ConstructProjectile( size_t a_runtimeSize, const RE::Projectile::LaunchData& a_launchData, REL::ID a_ctor )
+{
+	T* projectile = RE::malloc<T>( a_runtimeSize );
+
+	using func_t = T*( T*, const RE::Projectile::LaunchData& );
+	auto func = REL::Relocation<func_t>( a_ctor );
+
+	return func( projectile, a_launchData );
+}
+
+static RE::Projectile* ConstructProjectile( const RE::Projectile::LaunchData& a_launchData )
+{
+	if( !a_launchData.projectileBase )
+		return nullptr;
+
+	bool pre629 = Runtime::version < SKSE::RUNTIME_SSE_1_6_629;
+	switch( a_launchData.projectileBase->data.types.get() )
+	{
+	case RE::BGSProjectileData::Type::kArrow:
+		return ConstructProjectile<RE::ArrowProjectile>( pre629 ? 0x1F0 : 0x1F8, a_launchData, REL::ID( 43695 ) );
+
+	case RE::BGSProjectileData::Type::kBeam:
+		return ConstructProjectile<RE::BeamProjectile>( pre629 ? 0x240 : 0x248, a_launchData, REL::ID( 43746 ) );
+		
+	case RE::BGSProjectileData::Type::kCone:
+		return ConstructProjectile<RE::ConeProjectile>( pre629 ? 0x218 : 0x220, a_launchData, REL::ID( 43785 ) );
+		
+	case RE::BGSProjectileData::Type::kGrenade:
+		return ConstructProjectile<RE::GrenadeProjectile>( pre629 ? 0x1E8 : 0x1F0, a_launchData, REL::ID( 43911 ) );
+		
+	case RE::BGSProjectileData::Type::kMissile:
+		return ConstructProjectile<RE::MissileProjectile>( pre629 ? 0x1E0 : 0x1E8, a_launchData, REL::ID( 44023 ) );
+
+	default:
+		return nullptr;
+	}
+}
+
+struct alignas( 16 ) SimpleShapePhantomCInfo
+{
+	uint32_t collisionFilterInfo;  // 00
+	uint32_t unk04;                // 04
+	RE::hkpShape* shape;           // 08
+	uint8_t unk10;                 // 10
+	byte pad11[0x07];              // 11
+	uint64_t unk18;                // 18
+	uint32_t unk20;                // 20
+	uint32_t unk24;                // 24 = 0x80000000
+	uint64_t unk28;                // 28
+	RE::hkTransform transform;     // 30
+};
+
+static_assert( sizeof( SimpleShapePhantomCInfo ) == 0x70 );
+static_assert( offsetof( SimpleShapePhantomCInfo, shape ) == 0x08 );
+static_assert( offsetof( SimpleShapePhantomCInfo, unk24 ) == 0x24 );
+static_assert( offsetof( SimpleShapePhantomCInfo, transform ) == 0x30 );
+
+static RE::bhkSimpleShapePhantom* ConstructProjectileBhkSimpleShapePhantom( RE::Projectile* a_projectile, RE::COL_LAYER a_layer )
+{
+	RE::bhkShapePhantom* wrapper = (RE::bhkShapePhantom*)RE::malloc( sizeof(RE::bhkShapePhantom) );
+
+	using func_t = void( RE::bhkShapePhantom* );
+	static REL::Relocation<func_t> func{ RELOCATION_ID(77791, 77791) };
+	func( wrapper );
+
+	SimpleShapePhantomCInfo cinfo{};
+
+	cinfo.collisionFilterInfo =
+		(a_projectile->GetCollisionGroup() << 16) |
+		(std::to_underlying( a_layer ) & 0x7F);
+
+	cinfo.shape = static_cast<RE::hkpShape*>( a_projectile->GetCollisionShape()->referencedObject.get() );
+	cinfo.unk10 = 2;
+	cinfo.unk24 = 0x80000000;
+	cinfo.transform.rotation.col0	= RE::hkVector4{ 1.0f, 0.0f, 0.0f, 0.0f };
+	cinfo.transform.rotation.col1	= RE::hkVector4{ 0.0f, 1.0f, 0.0f, 0.0f };
+	cinfo.transform.rotation.col2	= RE::hkVector4{ 0.0f, 0.0f, 1.0f, 0.0f };
+	cinfo.transform.translation		= RE::hkVector4{ 0.0f, 0.0f, 0.0f, 0.0f };
+
+	*reinterpret_cast<uintptr_t*>( wrapper ) = RE::VTABLE_bhkSimpleShapePhantom[0].address();
+
+	using inner_func_t = void( RE::bhkShapePhantom*, SimpleShapePhantomCInfo* );
+	static REL::Relocation<inner_func_t> func_inner{ RELOCATION_ID(78783, 78783) };
+	func_inner( wrapper, &cinfo );
+
+	wrapper->unk28 = false;
+
+	return (RE::bhkSimpleShapePhantom*)wrapper;
+}
+
+static RE::Projectile* CreatePredictionProjectile( const RE::Projectile::LaunchData& a_launchData, RE::COL_LAYER a_collisionLayer )
+{
+	auto predictor = ConstructProjectile( a_launchData );
+	if( !predictor )
+		return nullptr;
+
+	auto& runtimeData = predictor->GetProjectileRuntimeData();
+	runtimeData.flags.set( RE::Projectile::Flags::kNoDamageOutsideCombat );
+	runtimeData.flags.reset(
+		RE::Projectile::Flags::kAddedToManager,
+		RE::Projectile::Flags::kProcessedImpacts,
+		RE::Projectile::Flags::kDestroyed,
+		RE::Projectile::Flags::kMoved
+		);
+
+	// Create phantom
+	auto phantom = ConstructProjectileBhkSimpleShapePhantom( predictor, a_collisionLayer );
+
+	// unk0E0 is the phantom that's used by predictor step
+	runtimeData.unk0E0 = phantom;
+
+	using resolve_context_t = void*( RE::TESObjectCELL* );
+	static REL::Relocation<resolve_context_t> resolveContext{ REL::ID( 18995 ) };
+	auto context = resolveContext( a_launchData.shooter->GetParentCell() );
+
+	using setup_phantom_t = void( RE::bhkSimpleShapePhantom*, void* );
+	auto** vtable = *reinterpret_cast<void***>( phantom );
+	auto setupPhantom =	reinterpret_cast<setup_phantom_t*>( vtable[0x29] );
+	setupPhantom( phantom, context );
+
+	using func_t = void( RE::bhkSimpleShapePhantom*, const RE::hkVector4& );
+	static REL::Relocation<func_t> setPosition{ REL::ID( 78771 ) };
+	setPosition( phantom, a_launchData.origin * havokScaling );
+
+	return predictor;
+}
+
+struct ProjectilePredictionResult
+{
+	enum Type
+	{
+		kNotSupported,
+		kImpacted,
+		kDestroyed,
+		kOutOfRange,
+		kFlightTimeTooLong,
+	};
+
+	Type						type			= kNotSupported;
+	float						distanceMoved	= 0;
+	float						flightTime		= 0;
+	RE::NiPoint3				location		= { 0, 0, 0 };
+	RE::Projectile::ImpactData	impact;
+
+	ProjectilePredictionResult()
+	{
+		memset( &impact, 0, sizeof(RE::Projectile::ImpactData) );
+	}
+};
+
+// This is the reimplementation of the game native VATS projectile simulator with unused functions pruned
+static ProjectilePredictionResult PredictProjectile( const RE::Projectile::LaunchData& a_launchData, RE::COL_LAYER a_collisionLayer )
+{
+	ProjectilePredictionResult result;
+	auto predictor = CreatePredictionProjectile( a_launchData, a_collisionLayer );
+
+	if( !predictor )
+		return result;
+
+	predictor->IncRefCount();
+
+	auto& predictorRuntime = predictor->GetProjectileRuntimeData();
+
+	predictorRuntime.linearVelocity.x =
+		a_launchData.projectileBase->data.speed *
+		predictor->GetPowerSpeedMult() *
+		predictor->GetWeaponSpeedMult() *
+		predictorRuntime.speedMult;
+
+	SetProjectileAngle( predictor, a_launchData.angleX, a_launchData.angleZ );
+
+	predictorRuntime.distanceMoved	= 0.0f;
+	predictorRuntime.livingTime		= 0.0f;
+	predictorRuntime.range			= a_launchData.projectileBase->data.range;
+
+	using simulate_t = void( RE::Projectile*, float );
+	static REL::Relocation<simulate_t> simulate{ REL::ID( 44197 ) };
+
+	float simulationStep	= 1.0f / 30.0f; // 1/30 second time step
+	float maxSimulationTime	= 10.0f; // 10 seconds
+	float simulatedTime		= 0.0f;
+	while( true )
+	{
+		simulate( predictor, simulationStep );
+
+		if( !predictorRuntime.impacts.empty() )
+		{
+			result.type		= ProjectilePredictionResult::kImpacted;
+			result.impact	= *predictorRuntime.impacts.front();
+			break;
+		}
+
+		simulatedTime += simulationStep;
+
+		if( predictorRuntime.flags.any( RE::Projectile::Flags::kDestroyed ) )
+		{
+			result.type		= ProjectilePredictionResult::kDestroyed;
+			break;
+		}
+
+		if( predictorRuntime.distanceMoved > predictorRuntime.range )
+		{
+			result.type		= ProjectilePredictionResult::kOutOfRange;
+			break;
+		}
+
+		if( simulatedTime >= maxSimulationTime )
+		{
+			result.type		= ProjectilePredictionResult::kFlightTimeTooLong;
+			break;
+		}
+	}
+
+	result.location			= predictor->GetPosition();
+	result.distanceMoved	= predictorRuntime.distanceMoved;
+	result.flightTime		= simulatedTime;
+
+	REX::DEBUG( "Predictor FormID: {:08X}", predictor->GetFormID() );
+
+	// Cleanup
+	if( !predictorRuntime.flags.any( RE::Projectile::Flags::kDestroyed ) )
+	{
+		using destroy_t = void( RE::Projectile* );
+		static REL::Relocation<destroy_t> destroyProjectile{ REL::ID( 44110 ) };
+		destroyProjectile( predictor );
+	}
+
+	assert( predictorRuntime.flags.any( RE::Projectile::Flags::kDestroyed ) );
+
+	RE::GarbageCollector::GetSingleton()->Add( predictor, true );
+
+	predictor->DecRefCount();
+
+	return result;
+}
+
 #pragma warning(pop)
