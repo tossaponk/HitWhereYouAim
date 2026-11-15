@@ -1,5 +1,12 @@
 #include "Hooks.h"
+#include "Native.h"
+#include "Ballistics.h"
+#include "ProjectilePrediction.h"
+#include "TargetSelection.h"
+#include "TrueDirectionalMovementAPI.h"
+#include "ActorState.h"
 
+extern TDM_API::IVTDM1* g_TDMAPI;
 bool Hooks::Install()
 {
 	MH_Initialize();
@@ -13,65 +20,13 @@ bool Hooks::Install()
 	SpellTargetFinderHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
+	Test::VATSRangedEvaluationHook::Install();
+	Test::HitDataCopyHook::Install();
 
 	return true;
 }
 
-// Crosshair raycast position cache
-CrosshairRaycastCache g_crosshairCache;
 static float pitchVelocity = 0.0f;
-
-RE::TESObjectREFR* Hooks::GetCrosshairRaycastTarget( uint32_t a_collisionGroup, RE::COL_LAYER a_collisionLayer, RE::NiPoint3* out_hitLocation, RE::bhkPickData* out_pickData )
-{
-	auto currentFrame		= RE::BSGraphics::State::GetSingleton()->GetFrameCount();
-
-	// Invalidate cache
-	if( g_crosshairCache.frameCreated != currentFrame ||
-		g_crosshairCache.collisionGroup != a_collisionGroup ||
-		g_crosshairCache.collisionLayer != a_collisionLayer )
-	{
-		auto screenSize			= RE::BSGraphics::Renderer::GetSingleton()->GetScreenSize();
-		auto screenHalfWidth	= screenSize.width  / 2;
-		auto screenHalfHeight	= screenSize.height / 2;
-		int32_t crosshairX		= (int32_t)(screenHalfWidth  + ( Settings::fCrosshairPosX * screenHalfWidth ));
-		int32_t crosshairY		= (int32_t)(screenHalfHeight + ( Settings::fCrosshairPosY * screenHalfHeight ));
-
-		g_crosshairCache.target = GetScreenRaycastTarget(
-			crosshairX,
-			crosshairY,
-			a_collisionGroup,
-			a_collisionLayer,
-			&g_crosshairCache.position,
-			&g_crosshairCache.pickData,
-			Settings::fMaximumTargetDistance * meterToGameUnit );
-
-		g_crosshairCache.frameCreated = currentFrame;
-		g_crosshairCache.collisionGroup = a_collisionGroup;
-		g_crosshairCache.collisionLayer = a_collisionLayer;
-	}
-
-	if( out_hitLocation ) *out_hitLocation = g_crosshairCache.position;
-	if( out_pickData ) *out_pickData = g_crosshairCache.pickData;
-	return g_crosshairCache.target;
-}
-
-RE::TESObjectREFR* Hooks::GetCrosshairRaycastTarget( const RE::CFilter& a_collisionFilter, RE::NiPoint3* out_hitLocation, RE::bhkPickData* out_pickData )
-{
-	return GetCrosshairRaycastTarget( a_collisionFilter.GetSystemGroup(), a_collisionFilter.GetCollisionLayer(), out_hitLocation, out_pickData);
-}
-
-template <class... Args>
-static void PrintDebugInfo( std::format_string<Args...> a_format, Args&&... a_args )
-{
-	if( !Settings::bEnableLogging )
-		return;
-
-	std::string message = fmt::vformat( a_format.get(), fmt::make_format_args( a_args... ) );
-	REX::DEBUG( message.c_str() );
-
-	if( auto* console = RE::ConsoleLog::GetSingleton() )
-		console->Print( message.c_str() );
-}
 
 void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileLaunchAngle(
 	[[maybe_unused]] RE::PlayerCharacter* a_player,
@@ -89,8 +44,12 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 	if( a_launchNode == nullptr && a_origin == nullptr )
 		return;
 
-	auto playerCamera		= RE::PlayerCamera::GetSingleton();
-	auto cameraState		= playerCamera->currentState.get();
+	auto playerCamera = RE::PlayerCamera::GetSingleton();
+	auto cameraState = playerCamera && playerCamera->currentState ? playerCamera->currentState.get() : nullptr;
+
+	if( !cameraState )
+		return;
+
 	auto thirdPersonState	= skyrim_cast<RE::ThirdPersonState*>( cameraState );
 	bool isFreeRotation		= thirdPersonState && thirdPersonState->GetFreeRotationMode();
 	if( Settings::bEnabled &&
@@ -109,150 +68,66 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 			)
 		)
 	{
-		auto camera				= RE::Main::WorldRootCamera();
-		float aimZeroDistance	= Settings::fMaximumTargetDistance * meterToGameUnit;
-		RE::NiPoint3 fireOrigin = a_origin ? *a_origin : a_launchNode->world.translate;
-
-		RE::NiPoint3 aimLocation;
-		RE::bhkPickData pickData;
-		auto target = GetCrosshairRaycastTarget(
-			a_projectile->GetCollisionGroup(),
-			RE::COL_LAYER::kLOS,
-			&aimLocation,
-			&pickData );
-
-		RE::NiPoint3 rayEnd = ((RE::NiPoint3&)(pickData.rayInput.to.quad.m128_f32) / havokScaling);
-		auto impactDepth = GetImpactDistanceAheadOfProjectileOrigin( camera->world.translate, rayEnd, aimLocation, fireOrigin );
-		PrintDebugInfo( "Crosshair impact depth = {}", impactDepth );
-
-		// Cancel launch angle modification if the ray impact is behind the projectile origin
-		if( impactDepth > 0 )
+		// TEST: Temporarily disable target leading for VATS shot
+		bool prevLeading = Settings::bEnabledTargetLeading;
+		if( a_projectile->GetProjectileRuntimeData().flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) )
 		{
-			if( Settings::bTargetDepthPrediction )
-			{
-				// Clamp depth to potential target if there is one
-				RE::NiPoint3 rayDelta = camera->world.translate - aimLocation;
-				auto [potentialTarget,predictPos] = GetPotentialPlayerTarget(
-					rayDelta.Length(),
-					a_projectile->GetSpeed(),
-					a_projectile->GetGravity(),
-					&fireOrigin,
-					Settings::fPredictionWindowWidth,
-					Settings::fPredictionWindowHeight,
-					nullptr, Settings::IsFixedAngleEnabled() );
-
-				if( potentialTarget )
-				{
-					auto predictedDist = (predictPos - camera->world.translate).Length();
-					aimZeroDistance = predictedDist;
-
-					if( Settings::bShowTargetPredictionInfo )
-						PrintDebugInfo( "Predicted aim target: {}, distance: {}", potentialTarget->GetDisplayFullName(), aimZeroDistance );
-				}
-			}
-
-			aimLocation = ClampVectorFromOrigin( RE::Main::WorldRootCamera()->world.translate, aimLocation, aimZeroDistance );
-
-			// Add ray penetration
-			aimLocation = ExtendVectorFromOrigin( camera->world.translate, aimLocation, Settings::fRayPenetrationDepth * meterToGameUnit );
-
-			RE::NiPoint3 targetVelocity{ 0, 0, 0 };
-
-			// Get target velocity to calculate intercept
-			if( target )
-			{
-				target->GetLinearVelocity( targetVelocity );
-				auto targetName =  target->GetDisplayFullName();
-				PrintDebugInfo( "Project aim correction ray target: {}", targetName ? targetName : "" );
-			}
-
-			lastRayCoord = aimLocation;
-
-			bool firingAngleCalculated = false;
-			RE::NiPoint3 predicted;
-			float originalPitch = *out_pitch;
-			float originalYaw = *out_yaw;
-			// Use ballistic solver to solve the aim pitch
-			if( Settings::IsAutomaticPitchEnabled() )
-			{
-				// Zero out the velocity prediction if not needed
-				if( !Settings::bEnabledTargetLeading )
-					targetVelocity = { 0, 0, 0 };
-
-				if( CalculatePredictedProjectileAimPoint(
-					&predicted, &fireOrigin,
-					&aimLocation,
-					&targetVelocity,
-					a_projectile->GetSpeed(),
-					a_projectile->GetGravity() * GetWorldGravity(),
-					false ) )
-				{
-					PrintDebugInfo( "Aim assist mode: Skyrim" );
-					aimLocation = predicted;
-				}
-				else // Use custom solver if the Skyrim solver cannot be used
-				{
-					PrintDebugInfo( "Aim assist mode: Ballistic Solver" );
-					firingAngleCalculated = SolveBallisticIntercept( 
-						fireOrigin, aimLocation, &targetVelocity, 
-						a_projectile->GetSpeed(), a_projectile->GetGravity() * GetWorldGravity(), 
-						nullptr, out_pitch, out_yaw );
-				}
-			}
-
-			if( !firingAngleCalculated )
-			{
-				// Override angle
-				PrintDebugInfo( "Aim assist mode: Default" );
-				CalculateProjectileAngles( fireOrigin, aimLocation,	*out_pitch, *out_yaw );
-
-				// Pitch offset for projectile with gravity in fixed angle mode
-				if( Settings::IsFixedAngleEnabled() && a_projectile->GetGravity() > 0.0f )
-				{
-					*out_pitch -= Settings::fPitchOffsetDegree * degToRad;
-				}
-			}
-
-			// Ignore angle correction greater than limit when using target leading mode
-			if( Settings::IsTargetLeadingEnabled() )
-			{
-
-				float angleDeltaLimit = Settings::fMaxLeadingAngle * degToRad;
-				float pitchDiff = AngleDifference( *out_pitch, originalPitch );
-				float yawDiff = AngleDifference( *out_yaw, originalYaw );
-				if( pitchDiff >  angleDeltaLimit || yawDiff >  angleDeltaLimit ||
-					pitchDiff < -angleDeltaLimit || yawDiff < -angleDeltaLimit )
-				{
-					*out_pitch = originalPitch;
-					*out_yaw = originalYaw;
-				}
-			}
+			Settings::bEnabledTargetLeading = false;
 		}
 
-		auto equippedObject = a_player->GetEquippedObject( false );
-		if( equippedObject && equippedObject->IsWeapon() )
+		auto origin = a_origin ? *a_origin : a_launchNode->world.translate;
+		if( a_projectile->As<RE::ConeProjectile>() )
 		{
-			auto weapon = equippedObject->As<RE::TESObjectWEAP>();
-			if(  weapon &&
-				(weapon->IsBow() || weapon->IsCrossbow()) )
-			{
-				*out_pitch -= Settings::fArcheryPitchCalibration * degToRad;
-			}
+			origin = a_projectile->GetPosition();
 		}
 
-		rayImpactExpire = GetCurrentGameRuntimeMS() + 5000;
+		auto projectileSpeed = a_projectile->GetSpeed();
+		auto projectileGravity = a_projectile->GetGravity() * Native::GetWorldGravity();
+		auto target = Ballistics::ResolveCrosshairAim(
+			a_origin ? *a_origin : a_launchNode->world.translate,
+			projectileSpeed,
+			projectileGravity,
+			nullptr,
+			nullptr,
+			out_pitch,
+			out_yaw );
+
+		Settings::bEnabledTargetLeading = prevLeading;
+
+		//REX::DEBUG( "Live speed components: base={}, powerMult={}, weaponMult={}, projectileMult={}",
+		//	a_projectile->GetProjectileBase()->data.speed,
+		//	a_projectile->GetPowerSpeedMult(),
+		//	a_projectile->GetWeaponSpeedMult(),
+		//	a_projectile->GetProjectileRuntimeData().speedMult );
+
+		//REX::DEBUG( "Live Projectile[ Speed:{}, Gravity:{} ]", projectileSpeed, projectileGravity );
+
+		if( target )
+			PrintDebugInfo( "Projectile Target: {}", target->GetDisplayFullName() );
+
+		// Cache firing offset
+		RE::NiTransform playerTransform;
+		a_player->GetTransform( playerTransform );
+		RE::NiPoint3 localOffset = playerTransform.Invert() * a_projectile->GetPosition();
+
+		ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->AddSample(
+			a_projectile->GetProjectileRuntimeData().castingSource,
+			a_player->IsSneaking(),
+			localOffset,
+			*out_pitch );
 	}
 }
 
 float Hooks::ConcentrationSpellAngleHook::SetAimPitch( RE::Projectile* a_projectile, float a_angle, func_t* func )
 {
+	bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 	auto shooter = a_projectile->GetProjectileRuntimeData().shooter;
-	if( Settings::bEnabled && shooter && shooter.native_handle() == 0x100000 && playerPitch != FLT_MAX )
+	if( Settings::bEnabled && !isTDMLockedOn && shooter.native_handle() == 0x100000 && playerPitch != FLT_MAX )
 	{
-		auto cameraState = RE::PlayerCamera::GetSingleton()->currentState.get();
-		if( cameraState->id == RE::CameraState::kFirstPerson ||
-			cameraState->id == RE::CameraState::kThirdPerson ||
-			cameraState->id == RE::CameraState::kMount )
+		auto cameraState = GetCurrentPlayerCameraState();
+		if( cameraState == RE::CameraState::kFirstPerson ||
+			cameraState == RE::CameraState::kThirdPerson ||
+			cameraState == RE::CameraState::kMount )
 		{
 			return func( a_projectile, playerPitch );
 		}
@@ -263,32 +138,35 @@ float Hooks::ConcentrationSpellAngleHook::SetAimPitch( RE::Projectile* a_project
 
 float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectile, float a_angle, func_t* func )
 {
+	bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 	auto& runtimeData = a_projectile->GetProjectileRuntimeData();
 	auto shooter = runtimeData.shooter;
-	if( Settings::bEnabled && shooter && shooter.native_handle() == 0x100000 )
+	if( Settings::bEnabled && !isTDMLockedOn && shooter.native_handle() == 0x100000 )
 	{
-		auto cameraState = RE::PlayerCamera::GetSingleton()->currentState.get();
-		if( cameraState->id == RE::CameraState::kFirstPerson ||
-			cameraState->id == RE::CameraState::kThirdPerson ||
-			cameraState->id == RE::CameraState::kMount )
+		auto cameraState = GetCurrentPlayerCameraState();
+		if( cameraState == RE::CameraState::kFirstPerson ||
+			cameraState == RE::CameraState::kThirdPerson ||
+			cameraState == RE::CameraState::kMount )
 		{
 			auto actor = shooter.get()->As<RE::Actor>();
 			RE::NiPoint3 hitLocation;
 			RE::bhkPickData pickData;
-			GetCrosshairRaycastTarget(
+			Raycast::GetCrosshairTarget(
 				a_projectile->GetCollisionGroup(),
 				RE::COL_LAYER::kSpell,
 				&hitLocation,
 				&pickData
 			);
-			auto camera = RE::Main::WorldRootCamera();
-			auto origin = actor->GetMagicCaster( runtimeData.castingSource )->GetMagicNode()->world.translate;
-			auto rayEnd = ((RE::NiPoint3&)(pickData.rayInput.to.quad.m128_f32) / havokScaling);
-			auto impactDepth = GetImpactDistanceAheadOfProjectileOrigin( camera->world.translate, rayEnd, hitLocation, origin );
+
+			auto caster			= actor->GetMagicCaster( runtimeData.castingSource );
+			auto magicNode		= caster ? caster->GetMagicNode() : nullptr;
+			auto origin			= magicNode ? magicNode->world.translate : shooter.get()->GetPosition();
+			auto rayEnd			= ((RE::NiPoint3&)(pickData.rayInput.to.quad.m128_f32) / havokScaling);
+			auto impactDepth	= Ballistics::CalculateImpactDepth( origin, Ballistics::GetPlayerAimPosition(), rayEnd );
 
 			if( impactDepth > 0 )
 			{
-				CalculateProjectileAngles( origin, hitLocation, playerPitch, playerYaw );
+				Ballistics::CalculateAnglesToTarget( origin, hitLocation, playerPitch, playerYaw );
 				return func( a_projectile, playerYaw );
 			}
 			else
@@ -308,10 +186,9 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
 
-	// Try to make the aiming pose align with the target. Skip this for VATS
+	// Try to make the aiming pose align with the target. Only on third person mode
 	auto playerCamera = RE::PlayerCamera::GetSingleton();
 	auto currentCameraState = playerCamera->currentState ? playerCamera->currentState.get() : nullptr;
-	bool isVATSPlaying = currentCameraState && currentCameraState->id == RE::CameraState::kVATS;
 	bool isThirdPerson = currentCameraState && currentCameraState->id == RE::CameraState::kThirdPerson;
 	if( Settings::bEnabled && isThirdPerson && a_process == player->GetActorRuntimeData().currentProcess )
 	{
@@ -319,69 +196,205 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 		if( currentPitch == FLT_MAX )
 			currentPitch = a_pitch;
 
-		auto actorState = player->AsActorState();
-		bool isUsingRangedAttack = actorState->IsWeaponDrawn() &&
-			actorState->GetAttackState() >= RE::ATTACK_STATE_ENUM::kBowDraw &&
-			actorState->GetAttackState() <= RE::ATTACK_STATE_ENUM::kBowFollowThrough;
+		//DumpChangedAnimationGraphVariables( player );
 
-		bool shouldCorrectAimPitch = isUsingRangedAttack || Settings::bAlwaysCorrectAimPitch;
-		if( shouldCorrectAimPitch && !isVATSPlaying )
+		RangedAttackType rangedType;
+		RE::TESObjectWEAP* weapon;
+		RE::MagicItem* spell;
+		RE::MagicSystem::CastingSource source;
+		RE::BGSProjectile* projectileBase;
+		bool shouldCorrectAimPitch = GetRangedAttackData( player, &rangedType, &weapon, &spell, &projectileBase, &source );
+
+		shouldCorrectAimPitch |= Settings::bAlwaysCorrectAimPitch;
+		if( shouldCorrectAimPitch )
 		{
-			//auto camera				= RE::Main::WorldRootCamera();
-			auto screenSize			= RE::BSGraphics::Renderer::GetSingleton()->GetScreenSize();
-			auto screenHalfWidth	= screenSize.width  / 2;
-			auto screenHalfHeight	= screenSize.height / 2;
-			int32_t crosshairX		= (int32_t)(screenHalfWidth  + ( Settings::fCrosshairPosX * screenHalfWidth ));
-			int32_t crosshairY		= (int32_t)(screenHalfHeight + ( Settings::fCrosshairPosY * screenHalfHeight ));
+			float lookPitch = currentPitch, lookYaw = FLT_MAX;
+			RE::NiPoint3 lookTarget, targetLocation;
 
-			RE::NiPoint3 lookTarget{0,0,0};
-			RE::CFilter filter;
-			player->GetCollisionFilterInfo( filter );
-			GetScreenRaycastTarget(
-				crosshairX,
-				crosshairY,
-				filter.GetSystemGroup(),
-				RE::COL_LAYER::kLOS,
-				&lookTarget,
-				nullptr,
-				Settings::fMaximumTargetDistance * meterToGameUnit );
-
-			float lookPitch = 0, lookYaw;
-			auto aimPos = player->GetPosition();
-			//aimPos.z += player->GetInfoRuntimeData().eyeHeight;
-			auto aimHeight = player->IsSneaking() ? Settings::fSneakingAimHeight : Settings::fStandingAimHeight;
-			aimPos.z += aimHeight * meterToGameUnit * player->GetScale();
-
-			// Add penetration
-			lookTarget = ExtendVectorFromOrigin( aimPos, lookTarget, Settings::fRayPenetrationDepth * meterToGameUnit );
-
-			// 3rd person model firing angle adjustment
-			bool isAngleCalculated = false;
-			if( Settings::IsAutomaticPitchEnabled() )
+			auto aimPos = Ballistics::GetPlayerAimPosition();
+			if( !projectileBase )
 			{
-				auto ammo = player->GetCurrentAmmo();
-				auto projectile = ammo ? ammo->GetRuntimeData().data.projectile : nullptr;
-				if( projectile )
+				currentPitch = FLT_MAX;
+				pitchVelocity = 0.0f;
+				return result;
+			}
+
+			float projectileSpeed = projectileBase->data.speed;
+			float projectileGravity = projectileBase->data.gravity * Native::GetWorldGravity();
+			lookPitch = FLT_MAX;
+
+			bool isSpell = spell != nullptr;
+			float drawSpeed = 1.0f;
+			RE::NiPoint3 origin = player->GetPosition();
+			RE::NiNode* launchNode = player->GetFireNode();
+			if( !isSpell )
+			{
+				if( weapon )
+					drawSpeed = weapon->GetSpeed();
+
+				if( launchNode ) origin = launchNode->world.translate;
+				else origin = aimPos;
+			}
+			else
+			{
+				auto magicCaster = player->GetMagicCaster( source );
+
+				if( magicCaster )
+					launchNode = magicCaster->GetMagicNode();
+
+				if( launchNode )
+					origin = launchNode->world.translate;
+				else
+					origin = aimPos;
+			}
+
+			[[maybe_unused]]
+			auto target =
+				Ballistics::ResolveCrosshairAim(
+				aimPos,
+				projectileSpeed,
+				Settings::IsAutomaticPitchEnabled() ? projectileGravity : 0,
+				&lookTarget,
+				&targetLocation,
+				&lookPitch,
+				&lookYaw );
+
+			if( isSpell )
+			{
+				RE::NiTransform playerTransform;
+				player->GetTransform( playerTransform );
+				if( !ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->GetOrigin(
+					source,
+					player->IsSneaking(),
+					playerTransform,
+					lookPitch,
+					origin ) )
 				{
-					auto projectileSpeed	= projectile->data.speed;
-					auto projectileGravity	= projectile->data.gravity;
-					isAngleCalculated = SolveBallisticIntercept( 
-						aimPos, lookTarget, nullptr,
-						projectileSpeed, projectileGravity * GetWorldGravity(), 
-						&lookTarget, &lookPitch, &lookYaw );
+					origin = launchNode ? launchNode->world.translate : aimPos;
 				}
 			}
-			
-			if( !isAngleCalculated )
+
+			//REX::DEBUG( "Pitch: {}, Origin: {} {} {}", lookPitch, origin.x, origin.y, origin.z );
+
+			RE::Projectile::LaunchData launchData{};
+			launchData.origin = origin;
+			launchData.useOrigin = true;
+			launchData.noDamageOutsideCombat = true;
+			launchData.projectileBase = projectileBase;
+			launchData.shooter = player;
+			if( isSpell )
 			{
-				CalculateProjectileAngles( aimPos, lookTarget, lookPitch, lookYaw );
+				launchData.spell = spell;
+				launchData.castingSource = source;
+				launchData.power = 1.0f;
+			}
+			else
+			{
+				launchData.weaponSource = weapon;
+				launchData.ammoSource = player->GetCurrentAmmo();
+				launchData.power = weapon ? CalculateBowPower( GetCurrentBowDrawTimer( player ), launchData.weaponSource->GetSpeed() ) : 1.0f;
 			}
 
-			// Fixed pitch adjustment
-			if( Settings::IsFixedAngleEnabled() )
+			RE::CFilter filter;
+			player->GetCollisionFilterInfo( filter );
+			filter.SetCollisionLayer( isSpell ? RE::COL_LAYER::kSpell : RE::COL_LAYER::kProjectile );
+
+			bool isAiming = false;
+			player->GetGraphVariableBool( "bAimActive", isAiming );
+
+			auto effect = spell ? spell->GetAVEffect() : nullptr;
+			auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
+			bool isAimedSpell = effect && isAiming &&
+				( delivery == RE::MagicSystem::Delivery::kAimed ||
+				  delivery == RE::MagicSystem::Delivery::kTargetActor );
+
+			bool needPrediction = isAimedSpell || ((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
+			if( needPrediction )
 			{
-				lookPitch -= Settings::fPitchOffsetDegree * degToRad;
+				bool isShotObstructed = false;
+				bool shouldUseRaycast = delivery == RE::MagicSystem::Delivery::kTargetActor;
+				if( !shouldUseRaycast )
+				{
+					// Prepare the predictor
+					ProjectilePrediction::Predictor predictor( launchData, filter );
+					RE::Projectile* predictorProjectile = predictor.GetPredictorProjectile();
+					// Predictor aim
+					RE::NiPoint3 predictorTargetLoc;
+
+					// Native havok sweep for prediction required a vaild 3D object
+					if( predictorProjectile )
+					{
+						launchData.angleX = FLT_MAX;
+						launchData.angleZ = FLT_MAX;
+
+						projectileSpeed = predictorProjectile->GetSpeed();
+						projectileGravity = predictorProjectile->GetGravity() * Native::GetWorldGravity();
+
+						Ballistics::ResolveCrosshairAim(
+							origin,
+							projectileSpeed,
+							projectileGravity,
+							nullptr,
+							&predictorTargetLoc,
+							&launchData.angleX,
+							&launchData.angleZ );
+
+						//REX::DEBUG( "Predictor Projectile[ Speed:{}, Gravity:{} ]", projectileSpeed, projectileGravity );
+
+						auto predictionResult = predictor.Predict( launchData );
+						if( predictionResult.type == ProjectilePredictionResult::kImpacted )
+						{
+							RE::TESObjectREFRPtr impactRef;
+							RE::LookupReferenceByHandle( predictionResult.impact.collidee.native_handle(), impactRef );
+							if( impactRef && predictionResult.impact.damageRootNode )
+							{
+								//REX::DEBUG( "Predictor Impact: {}", predictionResult.impact.damageRootNode->name.c_str() );
+							}
+							else
+							{
+								//REX::DEBUG( "Predictor Impact: Static" );
+							}
+
+							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+							float impactDistance = (aimPos - predictionResult.impact.desiredTargetLoc).Length();
+							float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+							//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
+							if( impactDistance - crosshairDistance < -10.0f - rayPenetrationDepth - projectileBase->data.collisionRadius )
+							{
+								isShotObstructed = true;
+								//REX::DEBUG( "Applying red tint: Impact blocked" );
+							}
+						}
+					}
+				}
+				else // Raycast
+				{
+					RE::bhkPickData pickData;
+					RE::NiPoint3 rayDestination;
+					auto rayTarget = Raycast::GetTarget(
+						origin,
+						targetLocation,
+						filter.GetSystemGroup(),
+						RE::COL_LAYER::kLOS,
+						&rayDestination,
+						&pickData);
+
+					auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
+					isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
+					if( Settings::bShowFlightPrediction )
+					{
+						TrueHUDArrowTrail::BeginRay( origin, rayDestination );
+					}
+				}
+
+				if( isShotObstructed )
+					Crosshair::SetValidityState( false );
+				else
+					Crosshair::SetValidityState( true );
 			}
+
+			// 3rd person model firing angle adjustment for yaw
+			SetAimHeadingCorrection( *player, aimPos, lookTarget );
 
 			// 3rd person pitch bias
 			float pitchBias = Settings::fPitchBias * degToRad;
@@ -437,9 +450,14 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 		}
 		else
 		{
-			currentPitch = 0; // Reset when not firing
+			currentPitch = FLT_MAX; // Reset when not firing
 			pitchVelocity = 0;
 		}
+	}
+	else
+	{
+		currentPitch = FLT_MAX;
+		pitchVelocity = 0;
 	}
 
 	return result;
@@ -450,21 +468,24 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 	auto& shooter = a_this->GetProjectileRuntimeData().shooter;
 	if( shooter.native_handle() == 0x100000 ) // Player handle
 	{
-		if( Settings::bEnabled )
+		// Hand over the projectile correction to TDM if locked-on
+		bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
+		if( Settings::bEnabled && !isTDMLockedOn )
 		{
 			// Replace with HWYA angle
 			auto player = RE::PlayerCharacter::GetSingleton();
-			auto pcCamera = RE::PlayerCamera::GetSingleton();
-			auto cameraState = pcCamera->currentState.get();
-			if( cameraState && cameraState->id == RE::CameraState::kMount )
+			if( GetCurrentPlayerCameraState() == RE::CameraState::kMount )
 			{
-				auto biped = player->GetCurrentBiped();
+				auto& biped = player->GetCurrentBiped();
 				if( biped &&
 					player->AsActorState()->GetAttackState() >= RE::ATTACK_STATE_ENUM::kBowReleasing &&
 					player->AsActorState()->GetAttackState() <= RE::ATTACK_STATE_ENUM::kBowReleased )
 				{
 					auto process = player->GetActorRuntimeData().currentProcess;
 					auto fireNode = process->GetWeaponNode( biped );
+
+					if( !fireNode )
+						return;
 
 					auto firePosition = fireNode->world.translate;
 					auto fireDirection = fireNode->world.rotate * RE::NiPoint3( 0, 1, 0 );
@@ -492,7 +513,7 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 				}
 			}
 
-			SetProjectileAngle( a_this, a_angle.x, a_angle.z );
+			Ballistics::SetProjectileAngle( a_this, a_angle.x, a_angle.z );
 			if( Settings::bInheritVelocity && !Settings::IsTargetLeadingEnabled() )
 			{
 				RE::NiPoint3 playerVelocity{ 0, 0, 0 };
@@ -511,48 +532,3 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 	}
 }
 
-void Hooks::SpellRaycastTargetHook::ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor )
-{
-	float range = a_pickData->ray.Length3();
-	RE::NiPoint3 hitCrosshair{ 0, 0, 0 };
-	RE::bhkPickData crosshairPickData;
-	RE::Actor* crosshairTarget = nullptr;
-
-	// Crosshair ray phase
-	{
-		auto pickTarget = GetCrosshairRaycastTarget( a_pickData->rayInput.filterInfo, &hitCrosshair, &crosshairPickData );
-
-		if( Settings::bShowLastProjectilePath )
-		{
-			auto rayStart		= crosshairPickData.rayInput.from;
-			auto rayEnd			= crosshairPickData.rayInput.from + ( crosshairPickData.rayInput.to - crosshairPickData.rayInput.from ) * crosshairPickData.rayOutput.hitFraction;
-			TrueHUDArrowTrail::BeginRay(
-				HavokToWorld<RE::NiPoint3>( rayStart ),
-				HavokToWorld<RE::NiPoint3>( rayEnd ) );
-		}
-		
-		if( pickTarget )
-			crosshairTarget = pickTarget->As<RE::Actor>();
-	}
-
-	// Preserve crosshair miss on Target Actor delivery type.
-	if( a_useTargetActor && !crosshairTarget )
-	{
-		PickDataRayInputCopy( *a_pickData, crosshairPickData, range );
-		return;
-	}
-
-	// Aim the origin ray to the crosshair when crosshair hit something or the spell is Target Location delivery type.
-	auto handDirection = hitCrosshair - HavokToWorld<RE::NiPoint3>( a_origin );
-	handDirection.Unitize();
-
-	a_pickData->rayInput.from	= a_origin;
-	a_pickData->ray				= handDirection * range;
-
-	if( Settings::bShowLastProjectilePath )
-	{
-		TrueHUDArrowTrail::BeginRay(
-			HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from ),
-			HavokToWorld<RE::NiPoint3>( a_pickData->rayInput.from + a_pickData->ray) );
-	}
-}

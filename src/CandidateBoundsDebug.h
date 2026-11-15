@@ -6,6 +6,13 @@
 #include <cstdint>
 #include <vector>
 
+#include "TargetSelection.h"
+#include "Native.h"
+#include "Utils.h"
+#include "ActorState.h"
+
+using namespace TargetSelection;
+
 class CandidateBoundsDebug
 {
 public:
@@ -60,10 +67,10 @@ public:
 		auto player = RE::PlayerCharacter::GetSingleton();
 		float projectileSpeed;
 		float projectileGravity;
-		GetPlayerProjectileData( player, projectileSpeed, projectileGravity );
+		GetActorProjectileData( player, &projectileSpeed, &projectileGravity );
 		RE::NiPoint3 fireOrigin = player ? player->GetPosition() : RE::NiPoint3::Zero();
 
-		GetPotentialPlayerTarget(
+		TargetSelection::GetPotentialPlayerTarget(
 			Settings::fMaximumTargetDistance * ( 1.0f / 0.0142875f ),
 			projectileSpeed,
 			projectileGravity,
@@ -185,66 +192,6 @@ public:
 	}
 
 private:
-	static RE::BGSProjectile* GetMagicProjectile( const RE::MagicItem* a_magicItem )
-	{
-		if( !a_magicItem )
-			return nullptr;
-
-		for( const auto effect : a_magicItem->effects )
-		{
-			if( effect && effect->baseEffect && effect->baseEffect->data.projectileBase )
-				return effect->baseEffect->data.projectileBase;
-		}
-
-		return nullptr;
-	}
-
-	static RE::BGSProjectile* GetEquippedMagicProjectile( RE::PlayerCharacter* a_player, bool a_leftHand )
-	{
-		if( !a_player )
-			return nullptr;
-
-		auto equippedObject = a_player->GetEquippedObject( a_leftHand );
-		auto spell = equippedObject ? equippedObject->As<RE::SpellItem>() : nullptr;
-		return GetMagicProjectile( spell );
-	}
-
-	static void GetPlayerProjectileData( RE::PlayerCharacter* a_player, float& out_speed, float& out_gravity )
-	{
-		out_speed = 0.0f;
-		out_gravity = 0.0f;
-
-		if( !a_player )
-			return;
-
-		auto rightObject = a_player->GetEquippedObject( false );
-		auto leftObject = a_player->GetEquippedObject( true );
-		auto rightWeapon = rightObject ? rightObject->As<RE::TESObjectWEAP>() : nullptr;
-		auto leftWeapon = leftObject ? leftObject->As<RE::TESObjectWEAP>() : nullptr;
-		bool hasRangedWeapon = (rightWeapon && rightWeapon->IsRanged()) || (leftWeapon && leftWeapon->IsRanged());
-		RE::BGSProjectile* projectile = nullptr;
-
-		if( hasRangedWeapon )
-		{
-			auto ammo = a_player->GetCurrentAmmo();
-			if( ammo )
-				projectile = ammo->data.projectile;
-		}
-
-		if( !projectile )
-			projectile = GetEquippedMagicProjectile( a_player, false );
-
-		if( !projectile )
-			projectile = GetEquippedMagicProjectile( a_player, true );
-
-		if( projectile )
-		{
-			bool isHitScan = projectile->IsBeam() || projectile->IsFlamethrower();
-			out_speed = isHitScan ? 1.e6f : projectile->data.speed;
-			out_gravity = isHitScan ? 0 : projectile->data.gravity * GetWorldGravity();
-		}
-	}
-
 	static float GetPredictionTime( RE::PlayerCharacter* a_player, RE::Actor* a_target, float a_projectileSpeed )
 	{
 		if( !a_player || !a_target || a_projectileSpeed <= 0.0f )

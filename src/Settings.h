@@ -124,5 +124,6 @@ struct Settings
 	static inline bool		bShowCrosshairRayImpact;
 	static inline bool		bShowLastProjectilePath;
 	static inline bool		bEnabledTargetPrediction;
+	static inline bool		bShowFlightPrediction;
 };
 

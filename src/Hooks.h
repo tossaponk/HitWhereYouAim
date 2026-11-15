@@ -1,50 +1,16 @@
 #pragma once
 
 #include "Utils.h"
-#include "BallisticSolver.h"
 #include "Settings.h"
+#include "Crosshair.h"
+#include "Raycast.h"
 #include "TrueHUDArrowTrail.h"
 #include "CandidateBoundsDebug.h"
 
-struct CrosshairRaycastCache
-{
-	RE::NiPoint3		position;
-	RE::bhkPickData		pickData;
-	RE::TESObjectREFR*	target;
-	RE::COL_LAYER		collisionLayer;
-	uint32_t			collisionGroup;
-	uint32_t			frameCreated;
-
-	CrosshairRaycastCache()
-	{
-		memset( this, 0, sizeof(CrosshairRaycastCache) );
-	}
-};
-
-static constexpr float degToRad = std::numbers::pi_v<float> / 180.0f;
-static constexpr float meterToGameUnit = 1.0f / 0.0142875f;
-static RE::NiPoint3 lastRayCoord = {0,0,0};
-static uint32_t rayImpactExpire = 0;
 namespace Hooks
 {
-	static RE::TESObjectREFR* GetCrosshairRaycastTarget(
-		uint32_t a_collisionGroup,
-		RE::COL_LAYER a_collisionLayer,
-		RE::NiPoint3* out_hitLocation = nullptr,
-		RE::bhkPickData* out_pickData = nullptr);
-
-	static inline RE::TESObjectREFR* GetCrosshairRaycastTarget(
-		const RE::CFilter& a_collisionFilter,
-		RE::NiPoint3* out_hitLocation = nullptr,
-		RE::bhkPickData* out_pickData = nullptr );
-
 	struct PlayerProjectileCalculateLaunchAngleHook
 	{
-		static float AngleDifference( float a_corrected, float a_original )
-		{
-			return std::remainder( a_corrected - a_original, 2.0F * std::numbers::pi_v<float> );
-		}
-
 		static void CalculatePlayerProjectileLaunchAngle( RE::PlayerCharacter* a_player, RE::Projectile* a_projectile, RE::NiAVObject* a_launchNode,
 			float* out_yaw, float* out_pitch, RE::NiPoint3* a_origin, float a_unk7, float a_unk8 );
 
@@ -162,15 +128,16 @@ namespace Hooks
 	{
 		// This is shared by both Target Actor and Target Location delivery type.
 		// The exact delivery type is captured from the outer call
-		static void ResolveRayTarget( RE::bhkPickData* a_pickData, RE::hkVector4 a_origin, bool a_useTargetActor );
+		
 		static void thunk( RE::TESObjectCELL* a_cell, RE::bhkPickData* a_pickData )
 		{
+			RE::Actor* rayTarget = nullptr;
 			if( Settings::bEnabled )
 			{
 				RE::hkVector4 castOrigin = a_pickData->rayInput.from;
 
 				// Resolve hand-path interception and select the final target
-				ResolveRayTarget( a_pickData, castOrigin, SpellTargetFinderHook::useTargetActor );
+				rayTarget = Raycast::ResolveRayTarget( a_pickData, castOrigin, SpellTargetFinderHook::useTargetActor );
 			}
 
 			/*TrueHUDArrowTrail::BeginRay(
@@ -184,8 +151,7 @@ namespace Hooks
 			{
 				RE::hkVector4 hitLocation = a_pickData->rayInput.from + (a_pickData->rayInput.to - a_pickData->rayInput.from) * a_pickData->rayOutput.hitFraction;
 				hitLocation = hitLocation * ( 1.0f / havokScaling );
-				lastRayCoord = (RE::NiPoint3&)hitLocation.quad.m128_f32;
-				rayImpactExpire = GetCurrentGameRuntimeMS() + 5000;
+				Raycast::SetLastImpactLocation( (RE::NiPoint3&)hitLocation.quad.m128_f32, 5000 );
 			}
 		}
 		static inline REL::Relocation<decltype(thunk)> func;
@@ -308,15 +274,8 @@ namespace Hooks
 			func( a_this, a_delta );
 			TrueHUDArrowTrail::Update();
 			CandidateBoundsDebug::Update();
-
-			if( Settings::IsCrosshairImpactDebugEnabled() )
-			{
-				auto currentTimeMS = RE::BSTimer::GetSingleton()->smoothedRunTimeMS;
-				if( rayImpactExpire > currentTimeMS && lastRayCoord != RE::NiPoint3::Zero() )
-					SetCrosshairToWorldPosition( lastRayCoord );
-				else
-					ResetCrosshairPosition();
-			}
+			Raycast::Update();
+			Crosshair::Update();
 		}
 
 		static inline REL::Relocation<decltype( thunk )> func;
@@ -334,6 +293,26 @@ namespace Hooks
 
 	namespace Test
 	{
+		struct VATSRangedEvaluationHook
+		{
+			static void thunk( RE::Actor* a_this, RE::ActorMagicCaster* a_magicCaster, bool a_forceEvaluation, RE::TESObjectREFR* a_explicitTarget, bool a_isLeftHand )
+			{
+				func( a_this, a_magicCaster, a_forceEvaluation, a_explicitTarget, a_isLeftHand );
+			}
+			static inline REL::Relocation<decltype(thunk)> func;
+			static void Install()
+			{
+				//auto addr = REL::Relocation<uintptr_t>( RELOCATION_ID(40574,40574), 0x15B ).address(); //0x79B7DF
+				auto addr = util::GetInjectionAddress( RELOCATION_RAW(39495,40574), 
+					"85 C0 C6 44 24 20 00 4C 8B CB 48 8B CF 41 0F 95 C0 33 D2 E8 ?? ?? ?? ?? 48", 0x13, "E8" );
+
+				if( !addr )
+					REX::FAIL( "Cannot find target instruction for VATSRangedEvaluationHook" );
+
+				stl::write_thunk_call<VATSRangedEvaluationHook>( addr );
+			}
+		};
+
 		struct SetGraphVarFloatHook
 		{
 			static bool thunk( RE::TESForm* a_this, RE::BSFixedString& a_name, float a_value )
@@ -371,6 +350,41 @@ namespace Hooks
 				auto addr = (void*)REL::Relocation<uintptr_t>( REL::ID(32888) ).address();
 				MH_CreateHook( addr, thunk,	(void**)&func );
 				MH_EnableHook( addr );
+			}
+		};
+
+		struct HitDataCopyHook
+		{
+			// Hijacked HitData copy function -- Unused. Only work for real hits. VATS not included.
+			static RE::HitData* thunk( RE::HitData* a_dst, const RE::HitData* a_src )
+			{
+				return func( a_dst, a_src );
+			}
+			static inline REL::Relocation<decltype(thunk)> func;
+
+			/* 1.6.1170
+			SkyrimSE.exe+655432 - 48 8B D5              - mov rdx,rbp
+			SkyrimSE.exe+655435 - 48 8B C8              - mov rcx,rax
+			SkyrimSE.exe+655438 - E8 A3571800           - call SkyrimSE.exe+7DABE0
+			*/
+			static void Install()
+			{
+				auto addr = util::FindPatternInFunction( 
+					REL::Relocation<uintptr_t>( REL::ID(36905) ).address(), 
+					"48 8B D5 48 8B C8 E8" );
+
+				if( !addr )
+				{
+					REX::FAIL( "Cannot find target instruction for HitDataCopyHook" );
+				}
+
+				addr += 6;
+				if( *(uint8_t*)addr != 0xE8 )
+				{
+					REX::FAIL( "Opcode at injection site not matched. Aborting..." );
+				}
+
+				stl::write_thunk_call<HitDataCopyHook>( addr );
 			}
 		};
 	}

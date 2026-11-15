@@ -40,6 +40,8 @@ void Settings::Load()
 	settings->RegisterBinding( { &bShowCrosshairRayImpact,	Settings::BindingType::kBoolean,	"Debug", "bShowCrosshairRayImpact",		false } );
 	settings->RegisterBinding( { &bShowLastProjectilePath,	Settings::BindingType::kBoolean,	"Debug", "bShowLastProjectilePath",		false } );
 	settings->RegisterBinding( { &bEnabledTargetPrediction,	Settings::BindingType::kBoolean,	"Debug", "bEnabledTargetPrediction",	false } );
+	settings->RegisterBinding( { &bShowFlightPrediction,	Settings::BindingType::kBoolean,	"Debug", "bShowFlightPrediction",		false } );
+	
 	settings->Load( iniDefault );
 
 	CSimpleIniA iniUser;

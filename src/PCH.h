@@ -232,3 +232,9 @@ enum class PitchCorrectionMode
 	kAutomatic,
 	kFixedAngle,
 };
+
+static constexpr float twoPi = 2.0f * std::numbers::pi_v<float>;
+static constexpr float havokScaling = 0.0142875f;
+static constexpr float degToRad = std::numbers::pi_v<float> / 180.0f;
+static constexpr float radToDeg = 180.0f / std::numbers::pi_v<float>;
+static constexpr float meterToGameUnit = 1.0f / 0.0142875f;

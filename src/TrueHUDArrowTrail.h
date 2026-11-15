@@ -49,6 +49,16 @@ public:
 		active = true;
 	}
 
+	static void BeginStaticTrail( const RE::NiPoint3& a_origin )
+	{
+		std::scoped_lock lock( trailMutex );
+
+		projectileHandle.reset();
+		worldTrailPoints.clear();
+		active = false;
+		AppendPosition( a_origin );
+	}
+
 	static void BeginRay( const RE::NiPoint3& a_start, const RE::NiPoint3& a_end )
 	{
 		std::scoped_lock lock( trailMutex );
@@ -74,6 +84,12 @@ public:
 			float t = i / (float)segmentCount;
 			worldTrailPoints.push_back( a_start + delta * t );
 		}
+	}
+
+	static void AppendTrailPosition( const RE::NiPoint3& a_position )
+	{
+		std::scoped_lock lock( trailMutex );
+		AppendPosition( a_position );
 	}
 
 	static void Update()
@@ -172,21 +188,6 @@ public:
 	}
 
 private:
-	static bool IsVATSPlaying()
-	{
-		auto pcCamera = RE::PlayerCamera::GetSingleton();
-
-		if( pcCamera )
-		{
-			auto state = pcCamera->currentState;
-
-			if( state && state.get()->id == RE::CameraState::kVATS )
-				return true;
-		}
-
-		return false;
-	}
-
 	static void UpdateTrail()
 	{
 		if( !active )
@@ -352,7 +353,7 @@ private:
 	static inline float widthReferenceDistance = 1000.0f;
 	static inline float minimumTrailWidth = 0.5f;
 	static inline float maximumTrailWidth = 6.0f;
-	static inline size_t maximumPointCount = 256;
+	static inline size_t maximumPointCount = 1024;
 	static inline bool scaleWidthByDistance = true;
 	static inline bool active = false;
 	static inline bool enabled = true;

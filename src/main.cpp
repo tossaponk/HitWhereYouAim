@@ -5,9 +5,11 @@
 #include "HitWhereYouAimAPI.h"
 #include "TrueHUDArrowTrail.h"
 #include "CandidateBoundsDebug.h"
+#include "ProjectilePrediction.h"
+#include "TrueDirectionalMovementAPI.h"
+#include "ActorState.h"
 
-float crosshairOriginalX = FLT_MAX;
-float crosshairOriginalY = FLT_MAX;
+TDM_API::IVTDM1* g_TDMAPI = nullptr;
 
 extern "C" __declspec(dllexport) bool SKSEPlugin_Query( const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info )
 {
@@ -70,10 +72,14 @@ namespace
 			break;
 		case SKSE::MessagingInterface::kPreLoadGame:
 			TrueHUDArrowTrail::Stop();
+			ProjectilePrediction::CleanUpPredictorCache();
+			ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->Clear();
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
 			TrueHUDArrowTrail::Install();
 			CandidateBoundsDebug::Install();
+
+			g_TDMAPI = (TDM_API::IVTDM1*)TDM_API::RequestPluginAPI( TDM_API::InterfaceVersion::V1 );
 			break;
 		case SKSE::MessagingInterface::kPostPostLoad:
 			// TDM Compatibility hook
@@ -90,7 +96,7 @@ namespace
 	static void ReloadSettings( RE::StaticFunctionTag* )
 	{
 		Settings::Load();
-		ResetCrosshairPosition();
+		Crosshair::ResetPosition();
 		TrueHUDArrowTrail::SetEnabled( Settings::bShowLastProjectilePath );
 		CandidateBoundsDebug::SetEnabled( Settings::bEnabledTargetPrediction );
 		REX::DEBUG( "Settings reloaded by MCM" );
