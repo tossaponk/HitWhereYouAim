@@ -20,8 +20,8 @@ bool Hooks::Install()
 	SpellTargetFinderHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
-	Test::VATSRangedEvaluationHook::Install();
-	Test::HitDataCopyHook::Install();
+	//Test::VATSRangedEvaluationHook::Install();
+	//Test::HitDataCopyHook::Install();
 
 	return true;
 }
@@ -68,19 +68,6 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 			)
 		)
 	{
-		// TEST: Temporarily disable target leading for VATS shot
-		bool prevLeading = Settings::bEnabledTargetLeading;
-		if( a_projectile->GetProjectileRuntimeData().flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) )
-		{
-			Settings::bEnabledTargetLeading = false;
-		}
-
-		auto origin = a_origin ? *a_origin : a_launchNode->world.translate;
-		if( a_projectile->As<RE::ConeProjectile>() )
-		{
-			origin = a_projectile->GetPosition();
-		}
-
 		auto projectileSpeed = a_projectile->GetSpeed();
 		auto projectileGravity = a_projectile->GetGravity() * Native::GetWorldGravity();
 		auto target = Ballistics::ResolveCrosshairAim(
@@ -91,8 +78,6 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 			nullptr,
 			out_pitch,
 			out_yaw );
-
-		Settings::bEnabledTargetLeading = prevLeading;
 
 		//REX::DEBUG( "Live speed components: base={}, powerMult={}, weaponMult={}, projectileMult={}",
 		//	a_projectile->GetProjectileBase()->data.speed,
@@ -180,6 +165,7 @@ float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectil
 }
 
 static float currentPitch = FLT_MAX;
+extern RE::CameraState g_lastCameraState;
 float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch )
 {
 	float result = a_pitch;
@@ -187,9 +173,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
 
 	// Try to make the aiming pose align with the target. Only on third person mode
-	auto playerCamera = RE::PlayerCamera::GetSingleton();
-	auto currentCameraState = playerCamera->currentState ? playerCamera->currentState.get() : nullptr;
-	bool isThirdPerson = currentCameraState && currentCameraState->id == RE::CameraState::kThirdPerson;
+	auto currentCameraState = GetCurrentPlayerCameraState();
+	bool isThirdPerson = currentCameraState == RE::CameraState::kThirdPerson;
 	if( Settings::bEnabled && isThirdPerson && a_process == player->GetActorRuntimeData().currentProcess )
 	{
 		// Initialize
@@ -306,22 +291,33 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
 			bool isAimedSpell = effect && isAiming &&
 				( delivery == RE::MagicSystem::Delivery::kAimed ||
-				  delivery == RE::MagicSystem::Delivery::kTargetActor );
+					delivery == RE::MagicSystem::Delivery::kTargetActor );
 
-			bool needPrediction = isAimedSpell || ((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
-			if( needPrediction )
+			bool isReachabilitySupported = projectileBase->data.types.any(
+				RE::BGSProjectileData::Type::kArrow,
+				RE::BGSProjectileData::Type::kBeam,
+				RE::BGSProjectileData::Type::kMissile );
+
+			bool needPrediction =
+				isAimedSpell ||
+				((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
+
+			if( needPrediction && isReachabilitySupported )
 			{
 				bool isShotObstructed = false;
-				bool shouldUseRaycast = delivery == RE::MagicSystem::Delivery::kTargetActor;
+				bool isTargetActor = delivery == RE::MagicSystem::Delivery::kTargetActor;
+				bool isBeam = projectileBase->IsBeam();
+				bool shouldUseRaycast = isTargetActor || isBeam;
+
 				if( !shouldUseRaycast )
 				{
 					// Prepare the predictor
 					ProjectilePrediction::Predictor predictor( launchData, filter );
 					RE::Projectile* predictorProjectile = predictor.GetPredictorProjectile();
+
 					// Predictor aim
 					RE::NiPoint3 predictorTargetLoc;
 
-					// Native havok sweep for prediction required a vaild 3D object
 					if( predictorProjectile )
 					{
 						launchData.angleX = FLT_MAX;
@@ -339,13 +335,12 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 							&launchData.angleX,
 							&launchData.angleZ );
 
-						//REX::DEBUG( "Predictor Projectile[ Speed:{}, Gravity:{} ]", projectileSpeed, projectileGravity );
-
 						auto predictionResult = predictor.Predict( launchData );
 						if( predictionResult.type == ProjectilePredictionResult::kImpacted )
 						{
 							RE::TESObjectREFRPtr impactRef;
 							RE::LookupReferenceByHandle( predictionResult.impact.collidee.native_handle(), impactRef );
+
 							if( impactRef && predictionResult.impact.damageRootNode )
 							{
 								//REX::DEBUG( "Predictor Impact: {}", predictionResult.impact.damageRootNode->name.c_str() );
@@ -358,8 +353,15 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
 							float impactDistance = (aimPos - predictionResult.impact.desiredTargetLoc).Length();
 							float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+							float impactTolerance =
+								-10.0f -
+								rayPenetrationDepth -
+								projectileBase->data.collisionRadius * 3 -
+								GetProjectileImpactTolerance( projectileBase, launchData.spell );
+
 							//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
-							if( impactDistance - crosshairDistance < -10.0f - rayPenetrationDepth - projectileBase->data.collisionRadius )
+
+							if( impactDistance - crosshairDistance < impactTolerance )
 							{
 								isShotObstructed = true;
 								//REX::DEBUG( "Applying red tint: Impact blocked" );
@@ -367,30 +369,45 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 						}
 					}
 				}
-				else // Raycast
+				else
 				{
-					RE::bhkPickData pickData;
+					RE::bhkPickData pickData{};
 					RE::NiPoint3 rayDestination;
+
 					auto rayTarget = Raycast::GetTarget(
 						origin,
 						targetLocation,
 						filter.GetSystemGroup(),
 						RE::COL_LAYER::kLOS,
 						&rayDestination,
-						&pickData);
+						&pickData );
 
-					auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
-					isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
-					if( Settings::bShowFlightPrediction )
+					if( isTargetActor )
 					{
-						TrueHUDArrowTrail::BeginRay( origin, rayDestination );
+						// For now, any actor reached by the hand-origin ray is considered valid.
+						auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
+						isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
 					}
+					else // Beam
+					{
+						// A beam is obstructed only when the hand-origin ray hits something
+						// meaningfully before the crosshair-selected location.
+						if( pickData.rayOutput.rootCollidable )
+						{
+							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+							float impactDistance = (rayDestination - origin).Length();
+							float crosshairDistance = (targetLocation - origin).Length();
+
+							isShotObstructed = impactDistance - crosshairDistance < -10.0f - rayPenetrationDepth;
+						}
+					}
+
+					if( Settings::bShowFlightPrediction )
+						TrueHUDArrowTrail::BeginRay( origin, rayDestination );
 				}
 
-				if( isShotObstructed )
-					Crosshair::SetValidityState( false );
-				else
-					Crosshair::SetValidityState( true );
+				if( g_lastCameraState == currentCameraState )
+					Crosshair::SetValidityState( !isShotObstructed );
 			}
 
 			// 3rd person model firing angle adjustment for yaw
@@ -459,6 +476,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 		currentPitch = FLT_MAX;
 		pitchVelocity = 0;
 	}
+
+	g_lastCameraState = currentCameraState;
 
 	return result;
 }

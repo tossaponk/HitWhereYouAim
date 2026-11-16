@@ -74,7 +74,7 @@ namespace Native
 	inline void SetCrosshairValidity( bool a_valid )
 	{
 		using func_t = decltype(&SetCrosshairValidity);
-		static REL::Relocation<func_t> func{ RELOCATION_ID(51633, 51633) }; // TODO: SE ID
+		static REL::Relocation<func_t> func{ RELOCATION_ID( 50738, 51633 ) };
 		func( a_valid );
 	}
 }

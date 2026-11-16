@@ -235,10 +235,10 @@ inline float GetCurrentBowDrawTimer( const RE::PlayerCharacter* a_player )
 
 inline float CalculateBowPower( float a_drawTime, float a_drawSpeed )
 {
-	static REL::Relocation<float*> fBowDrawStartTime{ REL::Offset( 0x2003FF0 ) };
-	static REL::Relocation<float*> fBowMaximumPower{ REL::Offset( 0x1AD2870 ) };
-	static REL::Relocation<float*> fBowFullDrawTime{ REL::Offset( 0x2004038 ) };
-	static REL::Relocation<float*> fBowMinimumPower{ REL::Offset( 0x2004050 ) };
+	static REL::Relocation<float*> fBowDrawStartTime{ RELOCATION_ID( 505062, 374220 ) }; // 505062, 374220
+	static REL::Relocation<float*> fBowMaximumPower{ RELOCATION_ID( 228662, 186482 ) }; // 228662, 186482
+	static REL::Relocation<float*> fBowFullDrawTime{ RELOCATION_ID( 505068, 374229 ) }; // 505068, 374229
+	static REL::Relocation<float*> fBowMinimumPower{ RELOCATION_ID( 505070, 374232 ) }; // 505070, 374232
 
 	float maximum = *fBowMaximumPower;
 	float minimum = *fBowMinimumPower;

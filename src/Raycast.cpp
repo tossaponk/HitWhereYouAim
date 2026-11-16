@@ -201,18 +201,18 @@ bool Raycast::EvaluateRayTargetActor( RE::bhkPickData* a_pickData, RE::Actor* a_
 	if( !a_pickData )
 		return false;
 
-	bool isTargetVaild = false;
+	bool isTargetValid = false;
 	if( a_pickData && a_pickData->rayOutput.rootCollidable )
 	{
 		auto hitRef = RE::TESHavokUtilities::FindCollidableRef( *a_pickData->rayOutput.rootCollidable );
 		if( hitRef )
 		{
 			auto hitActor = hitRef->As<RE::Actor>();
-			isTargetVaild = hitActor && hitActor == a_target;
+			isTargetValid = hitActor && hitActor == a_target;
 		}
 	}
 
-	return isTargetVaild;
+	return isTargetValid;
 }
 
 void Raycast::Update()

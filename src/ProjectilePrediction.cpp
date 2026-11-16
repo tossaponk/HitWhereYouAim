@@ -74,7 +74,7 @@ RE::bhkSimpleShapePhantom* ConstructPhantom( RE::Projectile* a_projectile, RE::C
 	RE::bhkShapePhantom* wrapper = (RE::bhkShapePhantom*)RE::malloc( sizeof( RE::bhkShapePhantom ) );
 
 	using func_t = void( RE::bhkShapePhantom* );
-	static REL::Relocation<func_t> func{ RELOCATION_ID( 75965, 77791 ) }; // TODO: SE ID
+	static REL::Relocation<func_t> func{ RELOCATION_ID( 75965, 77791 ) };
 	func( wrapper );
 
 	SimpleShapePhantomCInfo cinfo{};

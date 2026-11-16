@@ -59,7 +59,7 @@ inline bool HasLineOfSight( RE::TESObjectREFR* a_observer, RE::TESObjectREFR* a_
 using conditionFunc_t = bool(RE::TESObjectREFR* a_ref, void* a_param1, void* a_param2, double& out_result);
 inline conditionFunc_t* GetConditionFunctionEntry( RE::FUNCTION_DATA::FunctionID a_id )
 {
-	static auto functionTable = REL::Relocation<uintptr_t>( RELOCATION_ID( 501795, 361129 ) ).address(); // TODO: SE ID
+	static auto functionTable = REL::Relocation<uintptr_t>( RELOCATION_ID( 501795, 361129 ) ).address();
 	static size_t stride = 0x50;
 	return *reinterpret_cast<conditionFunc_t**>( functionTable + (uint32_t)a_id * stride );
 }
@@ -183,6 +183,36 @@ inline RE::CameraState GetCurrentPlayerCameraState()
 		return playerCamera->currentState->id;
 
 	return (RE::CameraState)-1;
+}
+
+inline float GetMagicEffectArea( const RE::MagicItem* a_magicItem )
+{
+	if( !a_magicItem )
+		return 0.0f;
+
+	auto avEffect = a_magicItem->GetAVEffect();
+	if( !avEffect )
+		return 0.0f;
+
+	for( auto effect : a_magicItem->effects )
+	{
+		if( effect && effect->baseEffect == avEffect )
+			return (float)effect->effectItem.area;
+	}
+
+	return 0.0f;
+}
+
+inline float GetProjectileImpactTolerance( const RE::BGSProjectile* a_projectile, const RE::MagicItem* a_spell )
+{
+	float tolerance = a_projectile ?
+		a_projectile->data.collisionRadius :
+		0.0f;
+
+	if( a_spell )
+		tolerance += GetMagicEffectArea( a_spell ) * feetToGameUnit;
+
+	return tolerance;
 }
 
 #pragma warning(pop)

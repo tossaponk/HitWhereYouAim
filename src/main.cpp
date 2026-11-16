@@ -10,6 +10,7 @@
 #include "ActorState.h"
 
 TDM_API::IVTDM1* g_TDMAPI = nullptr;
+RE::CameraState g_lastCameraState = (RE::CameraState)-1;
 
 extern "C" __declspec(dllexport) bool SKSEPlugin_Query( const SKSE::QueryInterface* a_skse, SKSE::PluginInfo* a_info )
 {
@@ -71,6 +72,7 @@ namespace
 			RE::PlayerCharacter::GetSingleton()->AsBGSActorCellEventSource()->AddEventSink( CellChangeHandler::GetSingleton() );
 			break;
 		case SKSE::MessagingInterface::kPreLoadGame:
+			g_lastCameraState = (RE::CameraState)-1;
 			TrueHUDArrowTrail::Stop();
 			ProjectilePrediction::CleanUpPredictorCache();
 			ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->Clear();
