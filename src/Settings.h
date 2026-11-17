@@ -99,6 +99,7 @@ struct Settings
 	static inline float		fPredictionWindowWidth;
 	static inline float		fPredictionWindowHeight;
 	static inline bool		bInheritVelocity;
+	static inline bool		bEnableAimValidation;
 
 	// Compatibility
 	static inline bool		bAlwaysCorrectAimPitch;

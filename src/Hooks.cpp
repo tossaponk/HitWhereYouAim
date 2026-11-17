@@ -211,6 +211,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			{
 				currentPitch = FLT_MAX;
 				pitchVelocity = 0.0f;
+				g_lastCameraState = currentCameraState;
 				return result;
 			}
 
@@ -265,154 +266,155 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 			//REX::DEBUG( "Pitch: {}, Origin: {} {} {}", lookPitch, origin.x, origin.y, origin.z );
 
-			RE::Projectile::LaunchData launchData{};
-			launchData.origin = origin;
-			launchData.useOrigin = true;
-			launchData.noDamageOutsideCombat = true;
-			launchData.projectileBase = projectileBase;
-			launchData.shooter = player;
-			if( isSpell )
+			if( Settings::bEnableAimValidation )
 			{
-				launchData.spell = spell;
-				launchData.castingSource = source;
-				launchData.power = 1.0f;
-			}
-			else
-			{
-				launchData.weaponSource = weapon;
-				launchData.ammoSource = player->GetCurrentAmmo();
-				launchData.power = weapon ? CalculateBowPower( GetCurrentBowDrawTimer( player ), launchData.weaponSource->GetSpeed() ) : 1.0f;
-			}
-
-			RE::CFilter filter;
-			player->GetCollisionFilterInfo( filter );
-			filter.SetCollisionLayer( isSpell ? RE::COL_LAYER::kSpell : RE::COL_LAYER::kProjectile );
-
-			bool isAiming = false;
-			player->GetGraphVariableBool( "bAimActive", isAiming );
-
-			isAiming |= IsCastingRangedSpell( *player, rangedType == RangedAttackType::kLeftHand );
-
-			auto effect = spell ? spell->GetAVEffect() : nullptr;
-			auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
-			bool isAimedSpell = effect && isAiming &&
-				( delivery == RE::MagicSystem::Delivery::kAimed ||
-				  delivery == RE::MagicSystem::Delivery::kTargetActor );
-
-			bool isReachabilitySupported = projectileBase->data.types.any(
-				RE::BGSProjectileData::Type::kArrow,
-				RE::BGSProjectileData::Type::kBeam,
-				RE::BGSProjectileData::Type::kMissile );
-
-			bool needPrediction =
-				isAimedSpell ||
-				((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
-
-			if( needPrediction && isReachabilitySupported )
-			{
-				bool isShotObstructed = false;
-				bool isTargetActor = delivery == RE::MagicSystem::Delivery::kTargetActor;
-				bool isBeam = projectileBase->IsBeam();
-				bool shouldUseRaycast = isTargetActor || isBeam;
-
-				if( !shouldUseRaycast )
+				RE::Projectile::LaunchData launchData{};
+				launchData.origin = origin;
+				launchData.useOrigin = true;
+				launchData.noDamageOutsideCombat = true;
+				launchData.projectileBase = projectileBase;
+				launchData.shooter = player;
+				if( isSpell )
 				{
-					// Prepare the predictor
-					ProjectilePrediction::Predictor predictor( launchData, filter );
-					RE::Projectile* predictorProjectile = predictor.GetPredictorProjectile();
-
-					RE::NiPoint3 predictorTargetLoc;
-
-					if( predictorProjectile )
-					{
-						launchData.angleX = FLT_MAX;
-						launchData.angleZ = FLT_MAX;
-
-						projectileSpeed = predictorProjectile->GetSpeed();
-						projectileGravity = predictorProjectile->GetGravity() * Native::GetWorldGravity();
-
-						Ballistics::ResolveCrosshairAim(
-							origin,
-							projectileSpeed,
-							projectileGravity,
-							nullptr,
-							&predictorTargetLoc,
-							&launchData.angleX,
-							&launchData.angleZ );
-
-						auto predictionResult = predictor.Predict( launchData );
-						if( predictionResult.type == ProjectilePredictionResult::kImpacted )
-						{
-							RE::TESObjectREFRPtr impactRef;
-							RE::LookupReferenceByHandle( predictionResult.impact.collidee.native_handle(), impactRef );
-
-							if( impactRef && predictionResult.impact.damageRootNode )
-							{
-								//REX::DEBUG( "Predictor Impact: {}", predictionResult.impact.damageRootNode->name.c_str() );
-							}
-							else
-							{
-								//REX::DEBUG( "Predictor Impact: Static" );
-							}
-
-							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
-							float impactDistance = (aimPos - predictionResult.location).Length();
-							float crosshairDistance = (aimPos - predictorTargetLoc).Length();
-
-							float impactTolerance =
-								-10.0f -
-								rayPenetrationDepth -
-								GetProjectileImpactTolerance( projectileBase, launchData.spell );
-
-							//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
-
-							if( impactDistance - crosshairDistance < impactTolerance )
-							{
-								isShotObstructed = true;
-								//REX::DEBUG( "Applying red tint: Impact blocked" );
-							}
-						}
-					}
+					launchData.spell = spell;
+					launchData.castingSource = source;
+					launchData.power = 1.0f;
 				}
 				else
 				{
-					RE::bhkPickData pickData{};
-					RE::NiPoint3 rayDestination;
-
-					auto rayTarget = Raycast::GetTarget(
-						origin,
-						targetLocation,
-						filter.GetSystemGroup(),
-						RE::COL_LAYER::kLOS,
-						&rayDestination,
-						&pickData );
-
-					if( isTargetActor )
-					{
-						// For now, any actor reached by the launch-origin ray is considered valid.
-						auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
-						isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
-					}
-					else // Beam
-					{
-						// A beam is obstructed only when the launch-origin ray hits
-						// meaningfully before the crosshair-selected location.
-						if( pickData.rayOutput.rootCollidable )
-						{
-							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
-							float impactDistance = (rayDestination - origin).Length();
-							float crosshairDistance = (targetLocation - origin).Length();
-
-							isShotObstructed = impactDistance - crosshairDistance < -10.0f - rayPenetrationDepth;
-						}
-					}
-
-					if( Settings::bShowFlightPrediction )
-						TrueHUDArrowTrail::BeginRay( origin, rayDestination );
+					launchData.weaponSource = weapon;
+					launchData.ammoSource = player->GetCurrentAmmo();
+					launchData.power = weapon ? CalculateBowPower( GetCurrentBowDrawTimer( player ), launchData.weaponSource->GetSpeed() ) : 1.0f;
 				}
 
-				if( g_lastCameraState == currentCameraState )
-					Crosshair::SetValidityState( !isShotObstructed );
+				RE::CFilter filter;
+				player->GetCollisionFilterInfo( filter );
+				filter.SetCollisionLayer( isSpell ? RE::COL_LAYER::kSpell : RE::COL_LAYER::kProjectile );
+
+				bool isAiming = false;
+				player->GetGraphVariableBool( "bAimActive", isAiming );
+
+				isAiming |= IsCastingRangedSpell( *player, rangedType == RangedAttackType::kLeftHand );
+
+				auto effect = spell ? spell->GetAVEffect() : nullptr;
+				auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
+				bool isAimedSpell = effect && isAiming &&
+					( delivery == RE::MagicSystem::Delivery::kAimed ||
+					  delivery == RE::MagicSystem::Delivery::kTargetActor );
+
+				bool isReachabilitySupported = projectileBase->data.types.any(
+					RE::BGSProjectileData::Type::kArrow,
+					RE::BGSProjectileData::Type::kBeam,
+					RE::BGSProjectileData::Type::kMissile );
+
+				bool needPrediction =
+					isAimedSpell ||
+					((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
+
+				if( needPrediction && isReachabilitySupported )
+				{
+					bool isShotObstructed = false;
+					bool isTargetActor = delivery == RE::MagicSystem::Delivery::kTargetActor;
+					bool isBeam = projectileBase->IsBeam();
+					bool shouldUseRaycast = isTargetActor || isBeam;
+
+					if( !shouldUseRaycast )
+					{
+						// Prepare the predictor
+						ProjectilePrediction::Predictor predictor( launchData, filter );
+						RE::Projectile* predictorProjectile = predictor.GetPredictorProjectile();
+						if( predictorProjectile )
+						{
+							RE::NiPoint3 predictorTargetLoc;
+							launchData.angleX = FLT_MAX;
+							launchData.angleZ = FLT_MAX;
+
+							projectileSpeed = predictorProjectile->GetSpeed();
+							projectileGravity = predictorProjectile->GetGravity() * Native::GetWorldGravity();
+
+							Ballistics::ResolveCrosshairAim(
+								origin,
+								projectileSpeed,
+								projectileGravity,
+								nullptr,
+								&predictorTargetLoc,
+								&launchData.angleX,
+								&launchData.angleZ );
+
+							auto predictionResult = predictor.Predict( launchData );
+							if( predictionResult.type == ProjectilePredictionResult::kImpacted )
+							{
+								RE::TESObjectREFRPtr impactRef;
+								RE::LookupReferenceByHandle( predictionResult.impact.collidee.native_handle(), impactRef );
+
+								if( impactRef && predictionResult.impact.damageRootNode )
+								{
+									//REX::DEBUG( "Predictor Impact: {}", predictionResult.impact.damageRootNode->name.c_str() );
+								}
+								else
+								{
+									//REX::DEBUG( "Predictor Impact: Static" );
+								}
+
+								float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+								float impactDistance = (aimPos - predictionResult.location).Length();
+								float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+
+								float impactTolerance =
+									-10.0f -
+									rayPenetrationDepth -
+									GetProjectileImpactTolerance( projectileBase, launchData.spell );
+
+								//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
+
+								if( impactDistance - crosshairDistance < impactTolerance )
+								{
+									isShotObstructed = true;
+									//REX::DEBUG( "Applying red tint: Impact blocked" );
+								}
+							}
+						}
+					}
+					else
+					{
+						RE::bhkPickData pickData{};
+						RE::NiPoint3 rayDestination;
+
+						auto rayTarget = Raycast::GetTarget(
+							origin,
+							targetLocation,
+							filter.GetSystemGroup(),
+							RE::COL_LAYER::kLOS,
+							&rayDestination,
+							&pickData );
+
+						if( isTargetActor )
+						{
+							// For now, any actor reached by the launch-origin ray is considered valid.
+							auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
+							isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
+						}
+						else // Beam
+						{
+							// A beam is obstructed only when the launch-origin ray hits
+							// meaningfully before the crosshair-selected location.
+							if( pickData.rayOutput.rootCollidable )
+							{
+								float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+								float impactDistance = (rayDestination - origin).Length();
+								float crosshairDistance = (targetLocation - origin).Length();
+
+								isShotObstructed = impactDistance - crosshairDistance < -10.0f - rayPenetrationDepth;
+							}
+						}
+
+						if( Settings::bShowFlightPrediction )
+							TrueHUDArrowTrail::BeginRay( origin, rayDestination );
+					}
+
+					if( g_lastCameraState == currentCameraState )
+						Crosshair::SetValidityState( !isShotObstructed );
+				}
 			}
 
 			if( shouldCorrectAimPitch )

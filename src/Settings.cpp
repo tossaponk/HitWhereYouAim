@@ -21,6 +21,7 @@ void Settings::Load()
 	settings->RegisterBinding( { &fMaxLeadingAngle,			Settings::BindingType::kFloat,		"Main", "fMaxLeadingAngle",				45.0f } );
 	settings->RegisterBinding( { &bInheritVelocity,			Settings::BindingType::kBoolean,	"Main", "bInheritVelocity",				false } );
 	settings->RegisterBinding( { &bAlwaysCorrectAimPitch,	Settings::BindingType::kBoolean,	"Main", "bAlwaysCorrectAimPitch",		false } );
+	settings->RegisterBinding( { &bEnableAimValidation,		Settings::BindingType::kBoolean,	"Main", "bEnableAimValidation",			true } );
 
 	settings->RegisterBinding( { &fMaximumTargetDistance,	Settings::BindingType::kFloat,		"Calibration", "fMaximumTargetDistance",	100.0f } );
 	settings->RegisterBinding( { &fArcheryPitchCalibration,	Settings::BindingType::kFloat,		"Calibration", "fArcheryPitchCalibration",	0.02f } );
