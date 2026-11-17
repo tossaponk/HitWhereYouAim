@@ -272,3 +272,10 @@ void Raycast::MarkReleaseTargetConsumed()
 	if( g_releaseCache.valid )
 		g_releaseCache.pendingDeletion = true;
 }
+
+void Raycast::ClearReleaseTargetCapture()
+{
+	g_releaseCache.valid = false;
+	g_releaseCache.pendingDeletion = false;
+	g_releaseCache.target.reset();
+}

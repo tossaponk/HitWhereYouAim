@@ -297,17 +297,28 @@ namespace Hooks
 			if( runtime.flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) && runtime.weaponDamage == predictorDamage )
 				return false;
 
-			return func( a_this );
+			if( a_this->formType.any( RE::FormType::ProjectileArrow ) )
+				return _funcArrow( a_this );
+
+			if( a_this->formType.any( RE::FormType::ProjectileMissile ) )
+				return _funcMissile( a_this );
+
+			return _funcBase( a_this );
 		}
-		static inline REL::Relocation<decltype( thunk )> func;
+		static inline REL::Relocation<decltype( thunk )> _funcBase;
+		static inline REL::Relocation<decltype( thunk )> _funcArrow;
+		static inline REL::Relocation<decltype( thunk )> _funcMissile;
 		static inline size_t size = 0xB8;
 		static void Install()
 		{
-			stl::write_vfunc<RE::Projectile,PredictorGetKillOnCollisionHook>();
-			stl::write_vfunc<RE::ArrowProjectile,PredictorGetKillOnCollisionHook>();
-			stl::write_vfunc<RE::MissileProjectile,PredictorGetKillOnCollisionHook>();
+			_funcBase = REL::Relocation( RE::Projectile::VTABLE[0] ).write_vfunc(size, thunk);
+			_funcArrow = REL::Relocation( RE::ArrowProjectile::VTABLE[0] ).write_vfunc(size, thunk);
+			_funcMissile = REL::Relocation( RE::MissileProjectile::VTABLE[0] ).write_vfunc(size, thunk);
 
-			REX::DEBUG( "Predictor::GetKillOnCollisionHook hook installed" );
+			if( !_funcBase.address() || !_funcArrow.address() || !_funcMissile.address() )
+				REX::FAIL( "Predictor::GetKillOnCollisionHook hook installation failed" );
+			else
+				REX::DEBUG( "Predictor::GetKillOnCollisionHook hook installed" );
 		}
 	};
 

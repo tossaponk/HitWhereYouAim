@@ -45,4 +45,5 @@ namespace Raycast
 	void				CaptureReleaseTarget( RE::MagicSystem::CastingSource a_source );
 	bool				GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickData* out_pickData, RE::TESObjectREFRPtr* out_target );
 	void				MarkReleaseTargetConsumed();
+	void				ClearReleaseTargetCapture();
 }

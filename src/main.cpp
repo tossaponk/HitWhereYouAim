@@ -78,6 +78,7 @@ namespace
 			TrueHUDArrowTrail::Stop();
 			ProjectilePrediction::CleanUpPredictorCache();
 			ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->Clear();
+			Raycast::ClearReleaseTargetCapture();
 
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
