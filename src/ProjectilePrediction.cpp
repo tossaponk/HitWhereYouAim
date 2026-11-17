@@ -427,7 +427,8 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		using updateMovementAndCollision_t = void( RE::Projectile*, float );
 		static REL::Relocation<updateMovementAndCollision_t> updateMovementAndCollision{ RELOCATION_ID( 43006, 44197 ) };
 
-		TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
+		if( Settings::bShowFlightPrediction )
+			TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
 
 		float simulationStep = 1.0f / 30.0f; // 1/30 second time step
 		float maxSimulationTime = 10.0f; // 10 seconds
@@ -491,7 +492,8 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 				}
 			}
 
-			TrueHUDArrowTrail::AppendTrailPosition( ((*predictors)[0])->GetPosition() );
+			if( Settings::bShowFlightPrediction )
+				TrueHUDArrowTrail::AppendTrailPosition( ((*predictors)[0])->GetPosition() );
 
 			simulatedTime += currentTimeStep;
 			if( isFirstStep )
