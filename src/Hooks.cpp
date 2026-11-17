@@ -251,22 +251,28 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			// First-person reachability uses only the current live launch node.
 			if( isThirdPerson && isSpell )
 			{
-				RE::NiTransform playerTransform;
-				player->GetTransform( playerTransform );
-				if( !ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->GetOrigin(
-					source,
-					player->IsSneaking(),
-					playerTransform,
-					lookPitch,
-					origin ) )
+				if( spell && spell->GetCastingType() != RE::MagicSystem::CastingType::kConcentration )
 				{
-					origin = launchNode ? launchNode->world.translate : aimPos;
+					RE::NiTransform playerTransform;
+					player->GetTransform( playerTransform );
+					if( !ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->GetOrigin(
+						source,
+						player->IsSneaking(),
+						playerTransform,
+						lookPitch,
+						origin ) )
+					{
+						origin = launchNode ? launchNode->world.translate : aimPos;
+					}
 				}
 			}
 
 			//REX::DEBUG( "Pitch: {}, Origin: {} {} {}", lookPitch, origin.x, origin.y, origin.z );
+			bool enableAimValidation =
+				( isFirstPerson && Settings::bEnableFPSAimValidation ) ||
+				( isThirdPerson && Settings::bEnableTPSAimValidation );
 
-			if( Settings::bEnableAimValidation )
+			if( enableAimValidation )
 			{
 				RE::Projectile::LaunchData launchData{};
 				launchData.origin = origin;
@@ -420,7 +426,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			if( shouldCorrectAimPitch )
 			{
 				// Third-person model firing angle adjustment for yaw
-				SetAimHeadingCorrection( *player, aimPos, lookTarget );
+				if( !Settings::bDisableAimHeading )
+					SetAimHeadingCorrection( *player, aimPos, lookTarget );
 
 				// Third-person pitch bias
 				float pitchBias = Settings::fPitchBias * degToRad;

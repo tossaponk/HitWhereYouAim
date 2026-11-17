@@ -90,6 +90,8 @@ struct Settings
 
 	// Main functions
 	static inline bool		bEnabled;
+	static inline bool			bEnableTPSAimValidation;
+	static inline bool			bEnableFPSAimValidation;
 	static inline bool			bEnabledPitchCorrection;
 	static inline uint32_t		iPitchCorrectionMode;
 	static inline float				fPitchOffsetDegree;
@@ -99,10 +101,10 @@ struct Settings
 	static inline float		fPredictionWindowWidth;
 	static inline float		fPredictionWindowHeight;
 	static inline bool		bInheritVelocity;
-	static inline bool		bEnableAimValidation;
 
 	// Compatibility
 	static inline bool		bAlwaysCorrectAimPitch;
+	static inline bool		bDisableAimHeading;
 
 	// Calibration
 	static inline float		fMaximumTargetDistance;

@@ -11,6 +11,8 @@ void Settings::Load()
 
 	auto settings = GetSingleton();
 	settings->RegisterBinding( { &bEnabled,					Settings::BindingType::kBoolean,	"Main", "bEnabled",						true } );
+	settings->RegisterBinding( { &bEnableTPSAimValidation,	Settings::BindingType::kBoolean,	"Main", "bEnableTPSAimValidation",		true } );
+	settings->RegisterBinding( { &bEnableFPSAimValidation,	Settings::BindingType::kBoolean,	"Main", "bEnableFPSAimValidation",		true } );
 	settings->RegisterBinding( { &bEnabledPitchCorrection,	Settings::BindingType::kBoolean,	"Main", "bEnabledPitchCorrection",		true } );
 	settings->RegisterBinding( { &iPitchCorrectionMode,		Settings::BindingType::kInteger,	"Main", "iPitchCorrectionMode",			1 } );
 	settings->RegisterBinding( { &fPitchOffsetDegree,		Settings::BindingType::kFloat,		"Main", "fPitchOffsetDegree",			0.7f } );
@@ -21,7 +23,7 @@ void Settings::Load()
 	settings->RegisterBinding( { &fMaxLeadingAngle,			Settings::BindingType::kFloat,		"Main", "fMaxLeadingAngle",				45.0f } );
 	settings->RegisterBinding( { &bInheritVelocity,			Settings::BindingType::kBoolean,	"Main", "bInheritVelocity",				false } );
 	settings->RegisterBinding( { &bAlwaysCorrectAimPitch,	Settings::BindingType::kBoolean,	"Main", "bAlwaysCorrectAimPitch",		false } );
-	settings->RegisterBinding( { &bEnableAimValidation,		Settings::BindingType::kBoolean,	"Main", "bEnableAimValidation",			true } );
+	settings->RegisterBinding( { &bDisableAimHeading,		Settings::BindingType::kBoolean,	"Main", "bDisableAimHeading",			false } );
 
 	settings->RegisterBinding( { &fMaximumTargetDistance,	Settings::BindingType::kFloat,		"Calibration", "fMaximumTargetDistance",	100.0f } );
 	settings->RegisterBinding( { &fArcheryPitchCalibration,	Settings::BindingType::kFloat,		"Calibration", "fArcheryPitchCalibration",	0.02f } );

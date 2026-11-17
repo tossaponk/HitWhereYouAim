@@ -115,6 +115,11 @@ namespace
 		Crosshair::ResetPosition();
 		TrueHUDArrowTrail::SetEnabled( Settings::bShowLastProjectilePath );
 		CandidateBoundsDebug::SetEnabled( Settings::bEnabledTargetPrediction );
+
+		auto player = RE::PlayerCharacter::GetSingleton();
+		if( player )
+			player->SetGraphVariableFloat( "BowAimOffsetHeading", 0.0f );
+		
 		REX::DEBUG( "Settings reloaded by MCM" );
 	}
 
