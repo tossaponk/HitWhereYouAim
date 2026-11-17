@@ -29,6 +29,8 @@ namespace Raycast
 	CrosshairRaycastCache g_releaseCache;
 	RE::NiPoint3 lastRayCoord = {0,0,0};
 	uint32_t rayImpactExpire = 0;
+
+	std::mutex g_releaseCacheMutex;
 }
 
 float GetCameraRayRange( const RE::NiPoint3& a_cameraPosition, const RE::NiPoint3& a_cameraDirection, const RE::NiPoint3& a_rangeOrigin, float a_range )
@@ -247,6 +249,9 @@ void Raycast::CaptureReleaseTarget( [[maybe_unused]] RE::MagicSystem::CastingSou
 	RE::CFilter filter;
 	RE::PlayerCharacter::GetSingleton()->GetCollisionFilterInfo( filter );
 	GetCrosshairTarget( filter.GetSystemGroup(), RE::COL_LAYER::kLOS, nullptr, nullptr );
+
+	std::lock_guard lock{ g_releaseCacheMutex };
+
 	g_releaseCache = g_crosshairCache;
 	g_releaseCache.valid = true;
 	g_releaseCache.pendingDeletion = false;
@@ -256,6 +261,8 @@ bool Raycast::GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickDa
 {
 	constexpr uint32_t releaseCacheLifetime = 1000;
 	uint32_t currentTime = GetCurrentGameRuntimeMS();
+
+	std::lock_guard lock{ g_releaseCacheMutex };
 
 	if(	!g_releaseCache.valid || currentTime - g_releaseCache.timeCreated >= releaseCacheLifetime )
 		return false;
@@ -269,12 +276,16 @@ bool Raycast::GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickDa
 
 void Raycast::MarkReleaseTargetConsumed()
 {
+	std::lock_guard lock{ g_releaseCacheMutex };
+
 	if( g_releaseCache.valid )
 		g_releaseCache.pendingDeletion = true;
 }
 
 void Raycast::ClearReleaseTargetCapture()
 {
+	std::lock_guard lock{ g_releaseCacheMutex };
+
 	g_releaseCache.valid = false;
 	g_releaseCache.pendingDeletion = false;
 	g_releaseCache.target.reset();
