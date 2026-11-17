@@ -239,3 +239,4 @@ static constexpr float degToRad = std::numbers::pi_v<float> / 180.0f;
 static constexpr float radToDeg = 180.0f / std::numbers::pi_v<float>;
 static constexpr float meterToGameUnit = 1.0f / 0.0142875f;
 static constexpr float feetToGameUnit = 128.0f / 6.0f;
+static constexpr float predictorDamage = -1.0f;

@@ -32,7 +32,8 @@ static T* ConstructProjectile( size_t a_runtimeSize, const RE::Projectile::Launc
 	using func_t = T*( T*, const RE::Projectile::LaunchData& );
 	auto func = REL::Relocation<func_t>( a_ctor );
 
-	return func( projectile, a_launchData );
+	auto result = func( projectile, a_launchData );
+	return result;
 }
 
 RE::Projectile* Construct( const RE::Projectile::LaunchData& a_launchData )
@@ -100,6 +101,22 @@ RE::bhkSimpleShapePhantom* ConstructPhantom( RE::Projectile* a_projectile, RE::C
 	return (RE::bhkSimpleShapePhantom*)wrapper;
 }
 
+void PreparePhantom( RE::bhkSimpleShapePhantom* a_phantom, const RE::Projectile::LaunchData& a_launchData )
+{
+	using get_havok_world_t = RE::hkpWorld* ( RE::TESObjectCELL* );
+	static REL::Relocation<get_havok_world_t> getHavokWorld{ RELOCATION_ID( 18536, 18995 ) };
+	auto havokWorld = getHavokWorld( a_launchData.shooter->GetParentCell() );
+
+	using attach_to_world_t = void( RE::bhkSimpleShapePhantom*, RE::hkpWorld* );
+	auto** vtable = *reinterpret_cast<void***>( a_phantom );
+	auto attachToWorld = reinterpret_cast<attach_to_world_t*>( vtable[ 0x29 ] );
+	attachToWorld( a_phantom, havokWorld );
+
+	using func_t = void( RE::bhkSimpleShapePhantom*, const RE::hkVector4& );
+	static REL::Relocation<func_t> setPosition{ RELOCATION_ID( 76895, 78771 ) };
+	setPosition( a_phantom, a_launchData.origin * havokScaling );
+}
+
 RE::Projectile* CreatePredictor( const RE::Projectile::LaunchData& a_launchData, RE::CFilter a_collisionFilter )
 {
 	auto predictor = Construct( a_launchData );
@@ -121,18 +138,7 @@ RE::Projectile* CreatePredictor( const RE::Projectile::LaunchData& a_launchData,
 	// unk0E0 is the phantom that's used by predictor step
 	runtimeData.unk0E0 = phantom;
 
-	using get_havok_world_t = RE::hkpWorld* ( RE::TESObjectCELL* );
-	static REL::Relocation<get_havok_world_t> getHavokWorld{ RELOCATION_ID( 18536, 18995 ) };
-	auto havokWorld = getHavokWorld( a_launchData.shooter->GetParentCell() );
-
-	using attach_to_world_t = void( RE::bhkSimpleShapePhantom*, RE::hkpWorld* );
-	auto** vtable = *reinterpret_cast<void***>( phantom );
-	auto attachToWorld = reinterpret_cast<attach_to_world_t*>( vtable[ 0x29 ] );
-	attachToWorld( phantom, havokWorld );
-
-	using func_t = void( RE::bhkSimpleShapePhantom*, const RE::hkVector4& );
-	static REL::Relocation<func_t> setPosition{ RELOCATION_ID( 76895, 78771 ) };
-	setPosition( phantom, a_launchData.origin * havokScaling );
+	PreparePhantom( phantom, a_launchData );
 
 	return predictor;
 }
@@ -184,7 +190,7 @@ bool ResetPredictor( RE::Projectile* a_predictor, const RE::Projectile::LaunchDa
 	runtime.livingTime = 0.0f;
 
 	// Critical: a positive value enables the immediate character-hit dispatcher at SkyrimSE.exe+0x7EBFD1. 1.6.1170
-	runtime.weaponDamage = 0.0f;
+	runtime.weaponDamage = predictorDamage;
 
 	runtime.distanceMoved = 0.0f;
 	runtime.scale = 1.0f;
@@ -444,12 +450,22 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 					result.impact = *predictorRuntime.impacts.front();
 					shouldContinue = false;
 
+					RE::NiPoint3 predictorLocation = predictor->GetPosition();
+
 					if( i != 0 )
 					{
 						result.impact.desiredTargetLoc -= originOffsets[ i ];
+						predictorLocation -= originOffsets[ i ];
 					}
 
-					result.location = result.impact.desiredTargetLoc;
+					RE::NiPoint3 impactDirection = -result.impact.negativeVelocity;
+					float impactAdvance = (predictorLocation - result.impact.desiredTargetLoc).Length();
+
+					if( impactDirection.Unitize() > 0.0001f )
+						result.location = result.impact.desiredTargetLoc + impactDirection * impactAdvance;
+					else
+						result.location = result.impact.desiredTargetLoc;
+
 					break;
 				}
 

@@ -18,6 +18,7 @@ bool Hooks::Install()
 	SpellRaycastTargetHook::Install();
 	MagicCasterGetCrosshairActorHook::Install();
 	SpellTargetFinderHook::Install();
+	PredictorGetKillOnCollisionHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
 	//Test::VATSRangedEvaluationHook::Install();
@@ -100,6 +101,9 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 			a_player->IsSneaking(),
 			localOffset,
 			*out_pitch );
+
+		// Mark release target for delete when used
+		Raycast::MarkReleaseTargetConsumed();
 	}
 }
 
@@ -291,7 +295,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
 			bool isAimedSpell = effect && isAiming &&
 				( delivery == RE::MagicSystem::Delivery::kAimed ||
-					delivery == RE::MagicSystem::Delivery::kTargetActor );
+				  delivery == RE::MagicSystem::Delivery::kTargetActor );
 
 			bool isReachabilitySupported = projectileBase->data.types.any(
 				RE::BGSProjectileData::Type::kArrow,
@@ -351,12 +355,12 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 							}
 
 							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
-							float impactDistance = (aimPos - predictionResult.impact.desiredTargetLoc).Length();
+							float impactDistance = (aimPos - predictionResult.location).Length();
 							float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+							float depthPredictionDistance = (aimPos - targetLocation).Length();
 							float impactTolerance =
 								-10.0f -
 								rayPenetrationDepth -
-								projectileBase->data.collisionRadius * 3 -
 								GetProjectileImpactTolerance( projectileBase, launchData.spell );
 
 							//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );

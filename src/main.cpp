@@ -8,6 +8,7 @@
 #include "ProjectilePrediction.h"
 #include "TrueDirectionalMovementAPI.h"
 #include "ActorState.h"
+#include "InputEvent.h"
 
 TDM_API::IVTDM1* g_TDMAPI = nullptr;
 RE::CameraState g_lastCameraState = (RE::CameraState)-1;
@@ -70,23 +71,35 @@ namespace
 		case SKSE::MessagingInterface::kDataLoaded:
 			REX::INFO( "{} {} loaded", Version::PROJECT.data(), Version::NAME.data());
 			RE::PlayerCharacter::GetSingleton()->AsBGSActorCellEventSource()->AddEventSink( CellChangeHandler::GetSingleton() );
+
 			break;
 		case SKSE::MessagingInterface::kPreLoadGame:
 			g_lastCameraState = (RE::CameraState)-1;
 			TrueHUDArrowTrail::Stop();
 			ProjectilePrediction::CleanUpPredictorCache();
 			ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->Clear();
+
 			break;
 		case SKSE::MessagingInterface::kPostLoad:
 			TrueHUDArrowTrail::Install();
 			CandidateBoundsDebug::Install();
 
 			g_TDMAPI = (TDM_API::IVTDM1*)TDM_API::RequestPluginAPI( TDM_API::InterfaceVersion::V1 );
+
 			break;
 		case SKSE::MessagingInterface::kPostPostLoad:
 			// TDM Compatibility hook
 			Hooks::ProjectileInitHook::Install();
+
 			break;
+		case SKSE::MessagingInterface::kInputLoaded:
+			{
+				auto inputManager = RE::BSInputDeviceManager::GetSingleton();
+				if( inputManager )
+					inputManager->AddEventSink( InputEventSink::GetSingleton() );
+
+				break;
+			}
 		}
 	}
 

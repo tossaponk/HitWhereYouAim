@@ -282,10 +282,32 @@ namespace Hooks
 		static inline size_t size = 0xAD;
 		static void Install()
 		{
-			REL::Relocation<std::uintptr_t> vtable{ RE::VTABLE_PlayerCharacter[0] };
 			stl::write_vfunc<RE::PlayerCharacter,PlayerUpdateHook>();
 
 			REX::DEBUG( "PlayerCharacter::Update hook installed" );
+		}
+	};
+
+	struct PredictorGetKillOnCollisionHook
+	{
+		static bool thunk( RE::Projectile* a_this )
+		{
+			// Avoid native teardown on the cached predictors.
+			auto& runtime = a_this->GetProjectileRuntimeData();
+			if( runtime.flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) && runtime.weaponDamage == predictorDamage )
+				return false;
+
+			return func( a_this );
+		}
+		static inline REL::Relocation<decltype( thunk )> func;
+		static inline size_t size = 0xB8;
+		static void Install()
+		{
+			stl::write_vfunc<RE::Projectile,PredictorGetKillOnCollisionHook>();
+			stl::write_vfunc<RE::ArrowProjectile,PredictorGetKillOnCollisionHook>();
+			stl::write_vfunc<RE::MissileProjectile,PredictorGetKillOnCollisionHook>();
+
+			REX::DEBUG( "Predictor::GetKillOnCollisionHook hook installed" );
 		}
 	};
 

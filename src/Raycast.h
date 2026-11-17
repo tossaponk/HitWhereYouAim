@@ -42,4 +42,7 @@ namespace Raycast
 	bool				EvaluateRayTargetActor( RE::bhkPickData* a_pickData, RE::Actor* a_target );
 
 	void				Update();
+	void				CaptureReleaseTarget( RE::MagicSystem::CastingSource a_source );
+	bool				GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickData* out_pickData, RE::TESObjectREFRPtr* out_target );
+	void				MarkReleaseTargetConsumed();
 }

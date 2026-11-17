@@ -187,7 +187,17 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 
 	RE::NiPoint3 aimLocation;
 	RE::bhkPickData pickData;
-	auto crosshairTarget = Raycast::GetCrosshairTarget( filter.GetSystemGroup(), RE::COL_LAYER::kLOS, &aimLocation, &pickData);
+	RE::TESObjectREFR* crosshairTarget = nullptr;
+	RE::TESObjectREFRPtr cachedTarget;
+	if( !Raycast::GetReleaseTargetCapture( &aimLocation, &pickData, &cachedTarget ) )
+	{
+		crosshairTarget = Raycast::GetCrosshairTarget( filter.GetSystemGroup(), RE::COL_LAYER::kLOS, &aimLocation, &pickData);
+	}
+	else
+	{
+		crosshairTarget = cachedTarget.get();
+	}
+
 	auto predictedTarget = crosshairTarget;
 	bool mustUseCrosshair = crosshairTarget != nullptr;
 	if( mustUseCrosshair )

@@ -8,10 +8,13 @@ struct CrosshairRaycastCache
 {
 	RE::NiPoint3		position;
 	RE::bhkPickData		pickData;
-	RE::TESObjectREFR*	target;
+	RE::ObjectRefHandle	target;
 	RE::COL_LAYER		collisionLayer;
 	uint32_t			collisionGroup;
 	uint32_t			frameCreated;
+	uint32_t			timeCreated;
+	bool				valid;
+	bool				pendingDeletion;
 
 	CrosshairRaycastCache()
 	{
@@ -23,6 +26,7 @@ namespace Raycast
 {
 	// Crosshair raycast position cache
 	CrosshairRaycastCache g_crosshairCache;
+	CrosshairRaycastCache g_releaseCache;
 	RE::NiPoint3 lastRayCoord = {0,0,0};
 	uint32_t rayImpactExpire = 0;
 }
@@ -128,13 +132,19 @@ RE::TESObjectREFR* Raycast::GetCrosshairTarget( uint32_t a_collisionGroup, RE::C
 			Settings::fMaximumTargetDistance * meterToGameUnit );
 
 		g_crosshairCache.frameCreated = currentFrame;
+		g_crosshairCache.timeCreated = GetCurrentGameRuntimeMS();
 		g_crosshairCache.collisionGroup = a_collisionGroup;
 		g_crosshairCache.collisionLayer = a_collisionLayer;
+		g_crosshairCache.valid = true;
 	}
 
 	if( out_hitLocation ) *out_hitLocation = g_crosshairCache.position;
 	if( out_pickData ) *out_pickData = g_crosshairCache.pickData;
-	return g_crosshairCache.target;
+
+	if( g_crosshairCache.target )
+		return g_crosshairCache.target.get().get();
+
+	return nullptr;
 }
 
 RE::TESObjectREFR* Raycast::GetCrosshairTarget( const RE::CFilter& a_collisionFilter, RE::NiPoint3* out_hitLocation, RE::bhkPickData* out_pickData )
@@ -224,6 +234,41 @@ void Raycast::Update()
 		else
 			Crosshair::ResetPosition();
 	}
+
+	if( g_releaseCache.pendingDeletion )
+	{
+		g_releaseCache.valid = false;
+		g_releaseCache.pendingDeletion = false;
+	}
 }
 
+void Raycast::CaptureReleaseTarget( [[maybe_unused]] RE::MagicSystem::CastingSource a_source )
+{
+	RE::CFilter filter;
+	RE::PlayerCharacter::GetSingleton()->GetCollisionFilterInfo( filter );
+	GetCrosshairTarget( filter.GetSystemGroup(), RE::COL_LAYER::kLOS, nullptr, nullptr );
+	g_releaseCache = g_crosshairCache;
+	g_releaseCache.valid = true;
+	g_releaseCache.pendingDeletion = false;
+}
 
+bool Raycast::GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickData* out_pickData, RE::TESObjectREFRPtr* out_target )
+{
+	constexpr uint32_t releaseCacheLifetime = 1000;
+	uint32_t currentTime = GetCurrentGameRuntimeMS();
+
+	if(	!g_releaseCache.valid || currentTime - g_releaseCache.timeCreated >= releaseCacheLifetime )
+		return false;
+
+	if( out_location )	*out_location	= g_releaseCache.position;
+	if( out_pickData )	*out_pickData	= g_releaseCache.pickData;
+	if( out_target )	*out_target		= g_releaseCache.target.get();
+
+	return true;
+}
+
+void Raycast::MarkReleaseTargetConsumed()
+{
+	if( g_releaseCache.valid )
+		g_releaseCache.pendingDeletion = true;
+}
