@@ -176,29 +176,35 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
 
-	// Try to make the aiming pose align with the target. Only on third person mode
 	auto currentCameraState = GetCurrentPlayerCameraState();
+	bool isFirstPerson = currentCameraState == RE::CameraState::kFirstPerson;
 	bool isThirdPerson = currentCameraState == RE::CameraState::kThirdPerson;
-	if( Settings::bEnabled && isThirdPerson && a_process == player->GetActorRuntimeData().currentProcess )
+
+	if( Settings::bEnabled &&
+		( isFirstPerson || isThirdPerson ) &&
+		a_process == player->GetActorRuntimeData().currentProcess )
 	{
-		// Initialize
-		if( currentPitch == FLT_MAX )
-			currentPitch = a_pitch;
-
-		//DumpChangedAnimationGraphVariables( player );
-
 		RangedAttackType rangedType;
 		RE::TESObjectWEAP* weapon;
 		RE::MagicItem* spell;
 		RE::MagicSystem::CastingSource source;
 		RE::BGSProjectile* projectileBase;
-		bool shouldCorrectAimPitch = GetRangedAttackData( player, &rangedType, &weapon, &spell, &projectileBase, &source );
 
-		shouldCorrectAimPitch |= Settings::bAlwaysCorrectAimPitch;
-		if( shouldCorrectAimPitch )
+		bool hasRangedAttack = GetRangedAttackData( player, &rangedType, &weapon, &spell, &projectileBase, &source );
+		bool shouldCorrectAimPitch =
+			isThirdPerson &&
+			( hasRangedAttack || Settings::bAlwaysCorrectAimPitch );
+
+		if( hasRangedAttack || shouldCorrectAimPitch )
 		{
-			float lookPitch = currentPitch, lookYaw = FLT_MAX;
-			RE::NiPoint3 lookTarget, targetLocation;
+			if( isThirdPerson && currentPitch == FLT_MAX )
+				currentPitch = a_pitch;
+
+			float lookPitch = isThirdPerson ? currentPitch : FLT_MAX;
+			float lookYaw = FLT_MAX;
+
+			RE::NiPoint3 lookTarget;
+			RE::NiPoint3 targetLocation;
 
 			auto aimPos = Ballistics::GetPlayerAimPosition();
 			if( !projectileBase )
@@ -210,19 +216,14 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 			float projectileSpeed = projectileBase->data.speed;
 			float projectileGravity = projectileBase->data.gravity * Native::GetWorldGravity();
-			lookPitch = FLT_MAX;
 
 			bool isSpell = spell != nullptr;
-			float drawSpeed = 1.0f;
+
 			RE::NiPoint3 origin = player->GetPosition();
 			RE::NiNode* launchNode = player->GetFireNode();
 			if( !isSpell )
 			{
-				if( weapon )
-					drawSpeed = weapon->GetSpeed();
-
-				if( launchNode ) origin = launchNode->world.translate;
-				else origin = aimPos;
+				origin = launchNode ? launchNode->world.translate : aimPos;
 			}
 			else
 			{
@@ -231,10 +232,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				if( magicCaster )
 					launchNode = magicCaster->GetMagicNode();
 
-				if( launchNode )
-					origin = launchNode->world.translate;
-				else
-					origin = aimPos;
+				origin = launchNode ? launchNode->world.translate : aimPos;
 			}
 
 			[[maybe_unused]]
@@ -248,7 +246,9 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				&lookPitch,
 				&lookYaw );
 
-			if( isSpell )
+			// The calibrated origin is based on third-person release animation.
+			// First-person reachability uses only the current live launch node.
+			if( isThirdPerson && isSpell )
 			{
 				RE::NiTransform playerTransform;
 				player->GetTransform( playerTransform );
@@ -291,6 +291,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 			bool isAiming = false;
 			player->GetGraphVariableBool( "bAimActive", isAiming );
 
+			isAiming |= IsCastingRangedSpell( *player, rangedType == RangedAttackType::kLeftHand );
+
 			auto effect = spell ? spell->GetAVEffect() : nullptr;
 			auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
 			bool isAimedSpell = effect && isAiming &&
@@ -319,7 +321,6 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 					ProjectilePrediction::Predictor predictor( launchData, filter );
 					RE::Projectile* predictorProjectile = predictor.GetPredictorProjectile();
 
-					// Predictor aim
 					RE::NiPoint3 predictorTargetLoc;
 
 					if( predictorProjectile )
@@ -357,7 +358,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 							float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
 							float impactDistance = (aimPos - predictionResult.location).Length();
 							float crosshairDistance = (aimPos - predictorTargetLoc).Length();
-							float depthPredictionDistance = (aimPos - targetLocation).Length();
+
 							float impactTolerance =
 								-10.0f -
 								rayPenetrationDepth -
@@ -388,13 +389,13 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 					if( isTargetActor )
 					{
-						// For now, any actor reached by the hand-origin ray is considered valid.
+						// For now, any actor reached by the launch-origin ray is considered valid.
 						auto targetActor = rayTarget ? rayTarget->As<RE::Actor>() : nullptr;
 						isShotObstructed = !Raycast::EvaluateRayTargetActor( &pickData, targetActor );
 					}
 					else // Beam
 					{
-						// A beam is obstructed only when the hand-origin ray hits something
+						// A beam is obstructed only when the launch-origin ray hits
 						// meaningfully before the crosshair-selected location.
 						if( pickData.rayOutput.rootCollidable )
 						{
@@ -414,71 +415,78 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 					Crosshair::SetValidityState( !isShotObstructed );
 			}
 
-			// 3rd person model firing angle adjustment for yaw
-			SetAimHeadingCorrection( *player, aimPos, lookTarget );
-
-			// 3rd person pitch bias
-			float pitchBias = Settings::fPitchBias * degToRad;
-
-			// Reduce bias for extremes because they're already correct.
-			float halfPi = std::numbers::pi_v<float> * 0.5f;
-			float fadeStart = std::clamp( Settings::fBiasFadingStart * degToRad, 0.0f, halfPi );
-			float t = std::clamp(( abs( lookPitch ) - fadeStart ) / ( halfPi - fadeStart ), 0.0f, 1.0f);
-			float biasFactor = 1.0f - t * t * ( 3.0f - 2.0f * t );
-			pitchBias *= biasFactor;
-			lookPitch -= pitchBias;
-
-			result = -lookPitch;
-
-			// Don't snap into place. Do it smoothly.
-			float deltaTime = RE::BSTimer::GetSingleton()->delta;
-			float maxSpeed = Settings::fMaxPitchAdjustmentSpeed * degToRad;
-			float acceleration = maxSpeed * 4.0f; // Reach max speed in 0.25 sec
-
-			float delta = result - currentPitch;
-			float distance = abs( delta );
-
-			if( distance < 0.00001f )
+			if( shouldCorrectAimPitch )
 			{
-				currentPitch = result;
-				pitchVelocity = 0.0f;
-			}
-			else
-			{
-				float direction = delta > 0 ? 1.0f : -1.0f;
-				float brakingSpeed = sqrt( 2.0f * acceleration * distance );
-				float targetVelocity = direction * std::min( maxSpeed, brakingSpeed );
+				// Third-person model firing angle adjustment for yaw
+				SetAimHeadingCorrection( *player, aimPos, lookTarget );
 
-				pitchVelocity += std::clamp(
-					targetVelocity - pitchVelocity,
-					-acceleration * deltaTime,
-					acceleration * deltaTime );
+				// Third-person pitch bias
+				float pitchBias = Settings::fPitchBias * degToRad;
 
-				float angleStep = pitchVelocity * deltaTime;
+				// Reduce bias for extremes because they're already correct.
+				float halfPi = std::numbers::pi_v<float> * 0.5f;
+				float fadeStart = std::clamp( Settings::fBiasFadingStart * degToRad, 0.0f, halfPi );
+				float t = std::clamp(( abs( lookPitch ) - fadeStart ) / ( halfPi - fadeStart ), 0.0f, 1.0f);
+				float biasFactor = 1.0f - t * t * ( 3.0f - 2.0f * t );
 
-				if( abs( angleStep ) >= distance && angleStep * delta > 0 )
+				pitchBias *= biasFactor;
+				lookPitch -= pitchBias;
+				result = -lookPitch;
+
+				// Don't snap into place. Do it smoothly.
+				float deltaTime = RE::BSTimer::GetSingleton()->delta;
+				float maxSpeed = Settings::fMaxPitchAdjustmentSpeed * degToRad;
+				float acceleration = maxSpeed * 4.0f; // Reach max speed in 0.25 sec
+				float delta = result - currentPitch;
+				float distance = abs( delta );
+
+				if( distance < 0.00001f )
 				{
 					currentPitch = result;
 					pitchVelocity = 0.0f;
 				}
 				else
 				{
-					currentPitch += angleStep;
-				}
-			}
+					float direction = delta > 0 ? 1.0f : -1.0f;
+					float brakingSpeed = sqrt( 2.0f * acceleration * distance );
+					float targetVelocity = direction * std::min( maxSpeed, brakingSpeed );
 
-			result = currentPitch;
+					pitchVelocity += std::clamp(
+						targetVelocity - pitchVelocity,
+						-acceleration * deltaTime,
+						acceleration * deltaTime );
+
+					float angleStep = pitchVelocity * deltaTime;
+
+					if( abs( angleStep ) >= distance && angleStep * delta > 0 )
+					{
+						currentPitch = result;
+						pitchVelocity = 0.0f;
+					}
+					else
+					{
+						currentPitch += angleStep;
+					}
+				}
+
+				result = currentPitch;
+			}
+			else
+			{
+				currentPitch = FLT_MAX;
+				pitchVelocity = 0.0f;
+			}
 		}
 		else
 		{
-			currentPitch = FLT_MAX; // Reset when not firing
-			pitchVelocity = 0;
+			currentPitch = FLT_MAX;
+			pitchVelocity = 0.0f;
 		}
 	}
 	else
 	{
 		currentPitch = FLT_MAX;
-		pitchVelocity = 0;
+		pitchVelocity = 0.0f;
 	}
 
 	g_lastCameraState = currentCameraState;
