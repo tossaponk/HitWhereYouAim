@@ -77,4 +77,14 @@ namespace Native
 		static REL::Relocation<func_t> func{ RELOCATION_ID( 50738, 51633 ) };
 		func( a_valid );
 	}
+
+	inline RE::hkpWorld* GetHavokWorldFromCell( RE::TESObjectCELL* a_cell )
+	{
+		if( !a_cell )
+			return nullptr;
+
+		using func_t = decltype(&GetHavokWorldFromCell);
+		static REL::Relocation<func_t> func{ RELOCATION_ID( 18536, 18995 ) };
+		return func( a_cell );
+	}
 }

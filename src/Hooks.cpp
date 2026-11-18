@@ -19,6 +19,7 @@ bool Hooks::Install()
 	MagicCasterGetCrosshairActorHook::Install();
 	SpellTargetFinderHook::Install();
 	PredictorGetKillOnCollisionHook::Install();
+	PredictorCheckSaveGameHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
 	//Test::VATSRangedEvaluationHook::Install();

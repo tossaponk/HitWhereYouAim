@@ -239,9 +239,18 @@ bool ResetPredictor( RE::Projectile* a_predictor, const RE::Projectile::LaunchDa
 		return false;
 	}
 
-	if( !phantom->phantom.get()->world )
+	auto havokPhantom = phantom->phantom.get();
+	auto shooterCell = a_launchData.shooter->GetParentCell();
+	auto shooterWorld = Native::GetHavokWorldFromCell( shooterCell );
+	if( !havokPhantom || !shooterWorld )
 	{
-		// Attempt to re-init the phantom
+		ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordResetFailure();
+		return false;
+	}
+
+	if( shooterWorld != havokPhantom->world )
+	{
+		// Transfer the cached phantom to the shooter's current Havok world.
 		PreparePhantom( phantom, a_launchData );
 	}
 
@@ -537,6 +546,9 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 
 		result.distanceMoved = mainPredictor->GetProjectileRuntimeData().distanceMoved;
 		result.flightTime = simulatedTime;
+
+		// Set destroyed to prevent it from being saved
+		mainPredictor->GetProjectileRuntimeData().flags.set( RE::Projectile::Flags::kDestroyed );
 	}
 
 	PredictorTelemetry::GetSingleton()->RecordPrediction( result );

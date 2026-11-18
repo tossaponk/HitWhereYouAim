@@ -1,5 +1,4 @@
 #pragma once
-#pragma once
 
 #include "PCH.h"
 #include "ProjectilePrediction.h"
@@ -87,7 +86,7 @@ namespace ProjectilePrediction
 
 		void RecordPredictionWithNativeTeardown()
 		{
-			++_nativePredictionTeardownAttemptCount;
+			++_predictionWithNativeTeardownCount;
 		}
 		
 		void RecordReleaseCacheCapture()
@@ -179,7 +178,7 @@ namespace ProjectilePrediction
 				_poolReplacementCount.load(),
 				_predictorDestructionCount.load(),
 				_nativeTeardownAttemptCount.load(),
-				_nativePredictionTeardownAttemptCount.load(),
+				_predictionWithNativeTeardownCount.load(),
 				_activeLeaseCount.load(),
 				_maximumActiveLeaseCount.load(),
 				_leaseUnderflowCount.load(),
@@ -204,7 +203,7 @@ namespace ProjectilePrediction
 			_poolReplacementCount = 0;
 			_predictorDestructionCount = 0;
 			_nativeTeardownAttemptCount = 0;
-			_nativePredictionTeardownAttemptCount = 0;
+			_predictionWithNativeTeardownCount = 0;
 			_activeLeaseCount = 0;
 			_maximumActiveLeaseCount = 0;
 			_leaseUnderflowCount = 0;
@@ -222,9 +221,11 @@ namespace ProjectilePrediction
 		void RecordPoolReplacement() {}
 		void RecordPredictorDestruction() {}
 		void RecordNativeTeardownAttempt() {}
+		void RecordPredictionWithNativeTeardown() {}
 		void RecordReleaseCacheCapture() {}
 		void RecordReleaseCacheUse() {}
 		void RecordReleaseCacheExpiration() {}
+		void RecordReleaseConsumption() {}
 		void AcquireLease() {}
 		void ReleaseLease() {}
 		void Report() const {}
@@ -255,7 +256,7 @@ namespace ProjectilePrediction
 		std::atomic<uint64_t> _poolReplacementCount = 0;
 		std::atomic<uint64_t> _predictorDestructionCount = 0;
 		std::atomic<uint64_t> _nativeTeardownAttemptCount = 0;
-		std::atomic<uint64_t> _nativePredictionTeardownAttemptCount = 0;
+		std::atomic<uint64_t> _predictionWithNativeTeardownCount = 0;
 		std::atomic<uint32_t> _activeLeaseCount = 0;
 		std::atomic<uint32_t> _maximumActiveLeaseCount = 0;
 		std::atomic<uint64_t> _leaseUnderflowCount = 0;

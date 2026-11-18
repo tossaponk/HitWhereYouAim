@@ -334,6 +334,42 @@ namespace Hooks
 		}
 	};
 
+	struct PredictorCheckSaveGameHook
+	{
+		static bool thunk( RE::Projectile* a_this, RE::BGSSaveFormBuffer* a_buffer )
+		{
+			// Avoid native teardown on the cached predictors.
+			auto& runtime = a_this->GetProjectileRuntimeData();
+			if( runtime.flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) && runtime.weaponDamage == predictorDamage )
+			{
+				return false;
+			}
+
+			if( a_this->formType.any( RE::FormType::ProjectileArrow ) )
+				return _funcArrow( a_this, a_buffer );
+
+			if( a_this->formType.any( RE::FormType::ProjectileMissile ) )
+				return _funcMissile( a_this, a_buffer );
+
+			return _funcBase( a_this, a_buffer );
+		}
+		static inline REL::Relocation<decltype( thunk )> _funcBase;
+		static inline REL::Relocation<decltype( thunk )> _funcArrow;
+		static inline REL::Relocation<decltype( thunk )> _funcMissile;
+		static inline size_t size = 0x0D;
+		static void Install()
+		{
+			_funcBase = REL::Relocation( RE::Projectile::VTABLE[0] ).write_vfunc(size, thunk);
+			_funcArrow = REL::Relocation( RE::ArrowProjectile::VTABLE[0] ).write_vfunc(size, thunk);
+			_funcMissile = REL::Relocation( RE::MissileProjectile::VTABLE[0] ).write_vfunc(size, thunk);
+
+			if( !_funcBase.address() || !_funcArrow.address() || !_funcMissile.address() )
+				REX::FAIL( "Predictor::PredictorCheckSaveGameHook hook installation failed" );
+			else
+				REX::DEBUG( "Predictor::PredictorCheckSaveGameHook hook installed" );
+		}
+	};
+
 	bool Install();
 
 	namespace Test
