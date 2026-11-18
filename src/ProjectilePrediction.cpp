@@ -452,7 +452,10 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		{
 			auto predictor = (*predictors)[ i ];
 			if( !ResetPredictor( predictor, a_launchData, a_launchData.origin + originOffsets[ i ] ) )
+			{
+				PredictorTelemetry::GetSingleton()->RecordPrediction( result );
 				return result;
+			}
 		}
 
 		using updateMovementAndCollision_t = void( RE::Projectile*, float );
@@ -546,9 +549,6 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 
 		result.distanceMoved = mainPredictor->GetProjectileRuntimeData().distanceMoved;
 		result.flightTime = simulatedTime;
-
-		// Set destroyed to prevent it from being saved
-		mainPredictor->GetProjectileRuntimeData().flags.set( RE::Projectile::Flags::kDestroyed );
 	}
 
 	PredictorTelemetry::GetSingleton()->RecordPrediction( result );
