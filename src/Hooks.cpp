@@ -313,9 +313,18 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 					RE::BGSProjectileData::Type::kBeam,
 					RE::BGSProjectileData::Type::kMissile );
 
+				bool isDrawingBow =
+					rangedType == RangedAttackType::kBow &&
+					((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0;
+
+				bool isAimingCrossbow =
+					rangedType == RangedAttackType::kCrossbow &&
+					player->AsActorState()->GetAttackState() == RE::ATTACK_STATE_ENUM::kBowDrawn;
+
 				bool needPrediction =
 					isAimedSpell ||
-					((BowDrawArray*)&player->GetPlayerRuntimeData().unkBA0)->size() > 0; // Drawing a bow
+					isDrawingBow ||
+					isAimingCrossbow;
 
 				if( needPrediction && isReachabilitySupported )
 				{
@@ -362,21 +371,32 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 									//REX::DEBUG( "Predictor Impact: Static" );
 								}
 
-								float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
-								float impactDistance = (aimPos - predictionResult.location).Length();
-								float crosshairDistance = (aimPos - predictorTargetLoc).Length();
-
-								float impactTolerance =
-									-10.0f -
-									rayPenetrationDepth -
-									GetProjectileImpactTolerance( projectileBase, launchData.spell );
-
-								//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
-
-								if( impactDistance - crosshairDistance < impactTolerance )
+								bool shouldUseFixedAngleValidation = Settings::IsFixedAngleEnabled() && projectileGravity > 0.001f;
+								constexpr float fixedAngleMinimumTravelRatio = 0.8f;
+								// Use direct impact for automatic pitch and no-gravity projectiles
+								if( !shouldUseFixedAngleValidation )
 								{
-									isShotObstructed = true;
-									//REX::DEBUG( "Applying red tint: Impact blocked" );
+									float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+									float impactDistance = (aimPos - predictionResult.location).Length();
+									float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+
+									float impactTolerance =
+										-10.0f -
+										rayPenetrationDepth -
+										GetProjectileImpactTolerance( projectileBase, launchData.spell );
+
+									//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
+
+									if( impactDistance - crosshairDistance < impactTolerance )
+									{
+										isShotObstructed = true;
+										//REX::DEBUG( "Applying red tint: Impact blocked" );
+									}
+								}
+								else // Require at least 80% distance travelled to be considered unobstructed for fixed angle mode
+								{
+									float crosshairDistance = (origin - lookTarget).Length();
+									isShotObstructed = predictionResult.distanceMoved < crosshairDistance * fixedAngleMinimumTravelRatio;
 								}
 							}
 						}
