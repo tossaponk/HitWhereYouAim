@@ -33,6 +33,18 @@
 
 namespace BallisticSolver
 {
+#ifdef _DEBUG
+	template<typename... Args>
+	inline void DebugLog( fmt::format_string<Args...> a_format, Args&&... a_args )
+	{
+		//std::string message = fmt::vformat( a_format.get(), fmt::make_format_args( a_args... ) );
+		//REX::DEBUG( message.c_str() );
+	}
+#else
+	template<typename... Args>
+	inline void DebugLog( fmt::format_string<Args...>, Args&&... )
+	{}
+#endif
 	constexpr double EPSILON = 1.0e-9;
 	constexpr double ROOT_EPSILON = 1.0e-6;
 
@@ -99,9 +111,41 @@ namespace BallisticSolver
 		return std::sqrt( Dot( a_value, a_value ) );
 	}
 
+	inline bool IsValidPolynomialRoot( double a_c0, double a_c1, double a_c2, double a_c3, double a_c4, double a_root )
+	{
+		if( !IsFinite( a_root ) )
+		{
+			DebugLog( "BallisticSolver::IsValidPolynomialRoot[ root:{:.17g}, finite:false ]", a_root );
+			return false;
+		}
+
+		const double rootMagnitude = std::abs( a_root );
+		const double rootSquared = a_root * a_root;
+		const double rootCubed = rootSquared * a_root;
+		const double rootFourth = rootSquared * rootSquared;
+		const double term0 = a_c0 * rootFourth;
+		const double term1 = a_c1 * rootCubed;
+		const double term2 = a_c2 * rootSquared;
+		const double term3 = a_c3 * a_root;
+		const double residual = term0 + term1 + term2 + term3 + a_c4;
+		const double hornerResidual = ((((a_c0 * a_root) + a_c1) * a_root + a_c2) * a_root + a_c3) * a_root + a_c4;
+		const double scale = std::abs( a_c0 ) * rootFourth + std::abs( a_c1 ) * rootCubed +
+			std::abs( a_c2 ) * rootSquared + std::abs( a_c3 ) * rootMagnitude + std::abs( a_c4 );
+		const double tolerance = _max( 1.0, scale ) * 1.0e-10;
+		const bool valid = IsFinite( residual ) && IsFinite( hornerResidual ) && std::abs( hornerResidual ) <= tolerance;
+
+		DebugLog(
+			"BallisticSolver::IsValidPolynomialRoot[ root:{:.17g}, terms:({:.17g},{:.17g},{:.17g},{:.17g},{:.17g}), "
+			"residual:{:.17g}, hornerResidual:{:.17g}, scale:{:.17g}, tolerance:{:.17g}, valid:{} ]",
+			a_root, term0, term1, term2, term3, a_c4, residual, hornerResidual, scale, tolerance, valid );
+
+		return valid;
+	}
+
 	inline int SolveQuadratic( double a_c0, double a_c1, double a_c2,
 		double& a_s0, double& a_s1 )
 	{
+		DebugLog( "BallisticSolver::SolveQuadratic IN[ c0:{:.17g}, c1:{:.17g}, c2:{:.17g} ]", a_c0, a_c1, a_c2 );
 		const double nan = std::numeric_limits<double>::quiet_NaN();
 		a_s0 = nan;
 		a_s1 = nan;
@@ -141,6 +185,7 @@ namespace BallisticSolver
 	inline int SolveCubic( double a_c0, double a_c1, double a_c2,
 		double a_c3, double& a_s0, double& a_s1, double& a_s2 )
 	{
+		DebugLog( "BallisticSolver::SolveCubic IN[ c0:{:.17g}, c1:{:.17g}, c2:{:.17g}, c3:{:.17g} ]", a_c0, a_c1, a_c2, a_c3 );
 		const double nan = std::numeric_limits<double>::quiet_NaN();
 		a_s0 = nan;
 		a_s1 = nan;
@@ -225,6 +270,7 @@ namespace BallisticSolver
 		double a_c3, double a_c4, double& a_s0, double& a_s1,
 		double& a_s2, double& a_s3 )
 	{
+		DebugLog( "BallisticSolver::SolveQuartic IN[ c0:{:.17g}, c1:{:.17g}, c2:{:.17g}, c3:{:.17g}, c4:{:.17g} ]", a_c0, a_c1, a_c2, a_c3, a_c4 );
 		const double nan = std::numeric_limits<double>::quiet_NaN();
 		a_s0 = nan;
 		a_s1 = nan;
@@ -404,6 +450,7 @@ namespace BallisticSolver
 		double a_projectileSpeed, double a_gravity, double a_time,
 		Result& a_result )
 	{
+		DebugLog( "BallisticSolver::BuildResult IN[ origin:({:.17g},{:.17g},{:.17g}), target:({:.17g},{:.17g},{:.17g}), velocity:({:.17g},{:.17g},{:.17g}), speed:{:.17g}, gravity:{:.17g}, time:{:.17g} ]", a_origin.x, a_origin.y, a_origin.z, a_targetPosition.x, a_targetPosition.y, a_targetPosition.z, a_targetVelocity.x, a_targetVelocity.y, a_targetVelocity.z, a_projectileSpeed, a_gravity, a_time );
 		if( !IsFinite( a_time ) || a_time <= ROOT_EPSILON )
 		{
 			return false;
@@ -425,6 +472,8 @@ namespace BallisticSolver
 		const double calculatedSpeed = Length( launchVelocity );
 		const double speedTolerance =
 			_max( 0.01, a_projectileSpeed * 0.001 );
+
+		DebugLog( "BallisticSolver::BuildResult VELOCITY[ displacement:({:.17g},{:.17g},{:.17g}), launch:({:.17g},{:.17g},{:.17g}), calculatedSpeed:{:.17g}, requestedSpeed:{:.17g}, difference:{:.17g}, tolerance:{:.17g} ]", displacement.x, displacement.y, displacement.z, launchVelocity.x, launchVelocity.y, launchVelocity.z, calculatedSpeed, a_projectileSpeed, calculatedSpeed - a_projectileSpeed, speedTolerance );
 
 		if( std::abs( calculatedSpeed - a_projectileSpeed ) >
 			speedTolerance )
@@ -501,6 +550,8 @@ namespace BallisticSolver
 		double a_projectileSpeed, double a_gravity, Result& a_result,
 		bool a_highArc = false )
 	{
+		DebugLog( "BallisticSolver::Solve BEGIN[ origin:({:.17g},{:.17g},{:.17g}), target:({:.17g},{:.17g},{:.17g}), velocity:({:.17g},{:.17g},{:.17g}), speed:{:.17g}, gravity:{:.17g}, highArc:{} ]", a_origin.x, a_origin.y, a_origin.z, a_targetPosition.x, a_targetPosition.y, a_targetPosition.z, a_targetVelocity.x, a_targetVelocity.y, a_targetVelocity.z, a_projectileSpeed, a_gravity, a_highArc );
+		a_result = {};
 		if( !IsFinite( a_origin ) || !IsFinite( a_targetPosition ) ||
 			!IsFinite( a_targetVelocity ) || !IsFinite( a_projectileSpeed ) ||
 			!IsFinite( a_gravity ) || a_projectileSpeed <= EPSILON )
@@ -534,11 +585,16 @@ namespace BallisticSolver
 			Q * Q - 2.0 * K * L - S * S + P * P + R * R;
 		const double c3 = 2.0 * K * Q + 2.0 * H * P + 2.0 * J * R;
 		const double c4 = K * K + H * H + J * J;
+
+		DebugLog( "BallisticSolver::Solve DISPLACEMENT[ H:{:.17g}, K:{:.17g}, J:{:.17g}, P:{:.17g}, Q:{:.17g}, R:{:.17g}, S:{:.17g}, L:{:.17g} ]", H, K, J, P, Q, R, S, L );
+		DebugLog( "BallisticSolver::Solve COEFFICIENTS[ c0:{:.17g}, c1:{:.17g}, c2:{:.17g}, c3:{:.17g}, c4:{:.17g} ]", c0, c1, c2, c3, c4 );
 		const double nan = std::numeric_limits<double>::quiet_NaN();
 		std::array<double, 4> roots{ nan, nan, nan, nan };
 
 		const int rootCount = SolveQuartic( c0, c1, c2, c3, c4,
 			roots[0], roots[1], roots[2], roots[3] );
+
+		DebugLog( "BallisticSolver::Solve ROOTS[ count:{}, r0:{:.17g}, r1:{:.17g}, r2:{:.17g}, r3:{:.17g} ]", rootCount, roots[0], roots[1], roots[2], roots[3] );
 
 		if( rootCount <= 0 )
 		{
@@ -552,6 +608,10 @@ namespace BallisticSolver
 		for( int i = 0; i < rootCount && i < 4; i++ )
 		{
 			const double time = roots[i];
+			const double residual = ((((c0 * time) + c1) * time + c2) * time + c3) * time + c4;
+			const bool validRoot = IsValidPolynomialRoot( c0, c1, c2, c3, c4, time );
+
+			DebugLog( "BallisticSolver::Solve ROOT_CANDIDATE[ index:{}, time:{:.17g}, finite:{}, positive:{}, residual:{:.17g}, validRoot:{} ]", i, time, IsFinite( time ), time > ROOT_EPSILON, residual, validRoot );
 
 			if( !IsFinite( time ) || time <= ROOT_EPSILON )
 			{
@@ -563,8 +623,11 @@ namespace BallisticSolver
 			if( !BuildResult( a_origin, a_targetPosition, a_targetVelocity,
 				a_projectileSpeed, a_gravity, time, candidate ) )
 			{
+				DebugLog( "BallisticSolver::Solve CANDIDATE_REJECTED[ index:{}, time:{:.17g} ]", i, time );
 				continue;
 			}
+
+			DebugLog( "BallisticSolver::Solve CANDIDATE_ACCEPTED[ index:{}, time:{:.17g}, launch:({:.17g},{:.17g},{:.17g}), intercept:({:.17g},{:.17g},{:.17g}), pitch:{:.17g}, yaw:{:.17g} ]", i, time, candidate.launchVelocity.x, candidate.launchVelocity.y, candidate.launchVelocity.z, candidate.interceptPosition.x, candidate.interceptPosition.y, candidate.interceptPosition.z, candidate.pitch, candidate.yaw );
 
 			const bool betterSolution = !found ||
 				(!a_highArc && time < selectedTime) ||
@@ -580,10 +643,12 @@ namespace BallisticSolver
 
 		if( !found )
 		{
+			DebugLog( "BallisticSolver::Solve END[ success:false ]" );
 			return false;
 		}
 
 		a_result = selectedResult;
+		DebugLog( "BallisticSolver::Solve END[ success:true, selectedTime:{:.17g}, launch:({:.17g},{:.17g},{:.17g}), intercept:({:.17g},{:.17g},{:.17g}), pitch:{:.17g}, yaw:{:.17g} ]", selectedTime, a_result.launchVelocity.x, a_result.launchVelocity.y, a_result.launchVelocity.z, a_result.interceptPosition.x, a_result.interceptPosition.y, a_result.interceptPosition.z, a_result.pitch, a_result.yaw );
 		return true;
 	}
 }

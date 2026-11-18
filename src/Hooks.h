@@ -6,7 +6,9 @@
 #include "Raycast.h"
 #include "TrueHUDArrowTrail.h"
 #include "CandidateBoundsDebug.h"
+#include "PredictorTelemetry.h"
 
+extern thread_local bool g_nativeTeardownRequested;
 namespace Hooks
 {
 	struct PlayerProjectileCalculateLaunchAngleHook
@@ -295,7 +297,17 @@ namespace Hooks
 			// Avoid native teardown on the cached predictors.
 			auto& runtime = a_this->GetProjectileRuntimeData();
 			if( runtime.flags.any( RE::Projectile::Flags::kNoDamageOutsideCombat ) && runtime.weaponDamage == predictorDamage )
+			{
+				if( !g_nativeTeardownRequested )
+				{
+					g_nativeTeardownRequested = true;
+					ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordPredictionWithNativeTeardown();
+				}
+
+				ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordNativeTeardownAttempt();
+
 				return false;
+			}
 
 			if( a_this->formType.any( RE::FormType::ProjectileArrow ) )
 				return _funcArrow( a_this );

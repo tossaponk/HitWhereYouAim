@@ -43,6 +43,14 @@ namespace Ballistics
 		const RE::NiPoint3&		a_aimPosition,
 		const RE::NiPoint3&		a_impactPosition );
 
+	bool CalculateFallbackBallisticAngles(
+		const RE::NiPoint3& a_origin,
+		const RE::NiPoint3& a_target,
+		float a_projectileSpeed,
+		float a_gravity,
+		float& a_pitch,
+		float& a_yaw );
+
 	RE::NiPoint3 GetPlayerAimPosition();
 
 	RE::TESObjectREFR* ResolveCrosshairAim(

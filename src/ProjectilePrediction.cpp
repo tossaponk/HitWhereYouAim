@@ -4,6 +4,9 @@
 #include "Utils.h"
 #include "TrueHUDArrowTrail.h"
 #include "Raycast.h"
+#include "PredictorTelemetry.h"
+
+thread_local bool g_nativeTeardownRequested = false;
 
 struct alignas( 16 ) SimpleShapePhantomCInfo
 {
@@ -148,6 +151,8 @@ void DeletePredictor( RE::Projectile* a_predictor )
 	if( !a_predictor )
 		return;
 
+	ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordPredictorDestruction();
+
 	auto& predictorRuntime = a_predictor->GetProjectileRuntimeData();
 	// Cleanup
 	if( !predictorRuntime.flags.any(RE::Projectile::Flags::kDestroyed) )
@@ -229,7 +234,16 @@ bool ResetPredictor( RE::Projectile* a_predictor, const RE::Projectile::LaunchDa
 	auto phantom = (RE::bhkSimpleShapePhantom*)runtime.unk0E0;
 
 	if( !phantom )
+	{
+		ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordResetFailure();
 		return false;
+	}
+
+	if( !phantom->phantom.get()->world )
+	{
+		// Attempt to re-init the phantom
+		PreparePhantom( phantom, a_launchData );
+	}
 
 	using set_position_t = void( RE::bhkSimpleShapePhantom*, const RE::hkVector4& );
 	static REL::Relocation<set_position_t> setPosition{ RELOCATION_ID( 76895, 78771 ) };
@@ -289,6 +303,8 @@ ProjectilePrediction::PredictorPool* ProjectilePrediction::PredictorPoolManager:
 		// Destroy unused predictor before attemping to create new pool
 		if( !_inUse[ i ] && _predictorKey[ i ] )
 		{
+			PredictorTelemetry::GetSingleton()->RecordPoolReplacement();
+
 			for( auto j = 0; j < PredictorPool::kPredictorCount; j++ )
 			{
 				DeletePredictor( pool[ j ] );
@@ -302,6 +318,8 @@ ProjectilePrediction::PredictorPool* ProjectilePrediction::PredictorPoolManager:
 		{
 			_predictorKey[ i ] = a_launchData.projectileBase;
 			_inUse[ i ] = true;
+
+			PredictorTelemetry::GetSingleton()->RecordPoolCreation();
 
 			bool createFailed = false;
 			for( auto j = 0; j < PredictorPool::kPredictorCount; j++ )
@@ -329,6 +347,7 @@ ProjectilePrediction::PredictorPool* ProjectilePrediction::PredictorPoolManager:
 					DeletePredictor( pool[ j ] );
 					pool[ j ] = nullptr;
 				}
+				ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordPoolCreationFailure();
 
 				return nullptr;
 			}
@@ -379,6 +398,9 @@ void ProjectilePrediction::PredictorPoolManager::Destroy()
 // This is the reimplementation of the game native VATS projectile simulator with unused functions pruned
 ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::Projectile::LaunchData& a_launchData )
 {
+#ifdef _DEBUG
+	PredictorTelemetryLease telemetryLease;
+#endif
 	ProjectilePredictionResult result;
 
 	float collisionRadius = a_launchData.projectileBase->data.collisionRadius;
@@ -430,6 +452,8 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		if( Settings::bShowFlightPrediction )
 			TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
 
+		g_nativeTeardownRequested = false;
+
 		float simulationStep = 1.0f / 30.0f; // 1/30 second time step
 		float maxSimulationTime = 10.0f; // 10 seconds
 		float simulatedTime = 0.0f;
@@ -442,6 +466,8 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 			{
 				auto predictor = (*predictors)[ i ];
 				auto& predictorRuntime = predictor->GetProjectileRuntimeData();
+
+				PredictorTelemetry::GetSingleton()->RecordPredictionStep();
 
 				updateMovementAndCollision( predictor, currentTimeStep );
 
@@ -513,5 +539,6 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		result.flightTime = simulatedTime;
 	}
 
+	PredictorTelemetry::GetSingleton()->RecordPrediction( result );
 	return result;
 }

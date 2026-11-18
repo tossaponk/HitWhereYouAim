@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include "TrueHUDArrowTrail.h"
 #include "Crosshair.h"
+#include "PredictorTelemetry.h"
 
 struct CrosshairRaycastCache
 {
@@ -237,6 +238,7 @@ void Raycast::Update()
 			Crosshair::ResetPosition();
 	}
 
+	std::lock_guard lock{ g_releaseCacheMutex };
 	if( g_releaseCache.pendingDeletion )
 	{
 		g_releaseCache.valid = false;
@@ -255,6 +257,8 @@ void Raycast::CaptureReleaseTarget( [[maybe_unused]] RE::MagicSystem::CastingSou
 	g_releaseCache = g_crosshairCache;
 	g_releaseCache.valid = true;
 	g_releaseCache.pendingDeletion = false;
+
+	ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordReleaseCacheCapture();
 }
 
 bool Raycast::GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickData* out_pickData, RE::TESObjectREFRPtr* out_target )
@@ -264,12 +268,23 @@ bool Raycast::GetReleaseTargetCapture( RE::NiPoint3* out_location, RE::bhkPickDa
 
 	std::lock_guard lock{ g_releaseCacheMutex };
 
-	if(	!g_releaseCache.valid || currentTime - g_releaseCache.timeCreated >= releaseCacheLifetime )
+	if( !g_releaseCache.valid )
 		return false;
+
+	if( currentTime - g_releaseCache.timeCreated >= releaseCacheLifetime )
+	{
+		g_releaseCache.valid = false;
+		g_releaseCache.pendingDeletion = false;
+
+		ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordReleaseCacheExpiration();
+		return false;
+	}
 
 	if( out_location )	*out_location	= g_releaseCache.position;
 	if( out_pickData )	*out_pickData	= g_releaseCache.pickData;
 	if( out_target )	*out_target		= g_releaseCache.target.get();
+
+	ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordReleaseCacheUse();
 
 	return true;
 }
@@ -279,7 +294,10 @@ void Raycast::MarkReleaseTargetConsumed()
 	std::lock_guard lock{ g_releaseCacheMutex };
 
 	if( g_releaseCache.valid )
+	{
 		g_releaseCache.pendingDeletion = true;
+		ProjectilePrediction::PredictorTelemetry::GetSingleton()->RecordReleaseConsumption();
+	}
 }
 
 void Raycast::ClearReleaseTargetCapture()

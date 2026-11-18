@@ -25,8 +25,8 @@ void Settings::Load()
 	settings->RegisterBinding( { &bAlwaysCorrectAimPitch,	Settings::BindingType::kBoolean,	"Main", "bAlwaysCorrectAimPitch",		false } );
 	settings->RegisterBinding( { &bDisableAimHeading,		Settings::BindingType::kBoolean,	"Main", "bDisableAimHeading",			false } );
 
-	settings->RegisterBinding( { &fMaximumTargetDistance,	Settings::BindingType::kFloat,		"Calibration", "fMaximumTargetDistance",	100.0f } );
-	settings->RegisterBinding( { &fArcheryPitchCalibration,	Settings::BindingType::kFloat,		"Calibration", "fArcheryPitchCalibration",	0.02f } );
+	settings->RegisterBinding( { &fMaximumTargetDistance,	Settings::BindingType::kFloat,		"Calibration", "fMaximumTargetDistance",	150.0f } );
+	settings->RegisterBinding( { &fArcheryPitchCalibration,	Settings::BindingType::kFloat,		"Calibration", "fArcheryPitchCalibration",	0.05f } );
 	settings->RegisterBinding( { &fCrosshairPosX,			Settings::BindingType::kFloat,		"Calibration", "fCrosshairPosX",			0.0f } );
 	settings->RegisterBinding( { &fCrosshairPosY,			Settings::BindingType::kFloat,		"Calibration", "fCrosshairPosY",			0.0f } );
 	settings->RegisterBinding( { &fRayPenetrationDepth,		Settings::BindingType::kFloat,		"Calibration", "fRayPenetrationDepth",		0.2f } );
@@ -35,8 +35,8 @@ void Settings::Load()
 	settings->RegisterBinding( { &fBiasFadingStart,			Settings::BindingType::kFloat,		"AngleCorrection", "fBiasFadingStart",			45.0f } );
 	settings->RegisterBinding( { &fMaxPitchAdjustmentSpeed,	Settings::BindingType::kFloat,		"AngleCorrection", "fMaxPitchAdjustmentSpeed",	360.0f } );
 	settings->RegisterBinding( { &fMountedYawTolerance,		Settings::BindingType::kFloat,		"AngleCorrection", "fMountedYawTolerance",		15.0f } );
-	settings->RegisterBinding( { &fStandingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fStandingAimHeight",		1.5f } );
-	settings->RegisterBinding( { &fSneakingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fSneakingAimHeight",		1.0f } );
+	settings->RegisterBinding( { &fStandingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fStandingAimHeight",		1.6f } );
+	settings->RegisterBinding( { &fSneakingAimHeight,		Settings::BindingType::kFloat,		"AngleCorrection", "fSneakingAimHeight",		1.2f } );
 
 	settings->RegisterBinding( { &bEnableLogging,			Settings::BindingType::kBoolean,	"Debug", "bEnableLogging",				false } );
 	settings->RegisterBinding( { &bShowTargetPredictionInfo,Settings::BindingType::kBoolean,	"Debug", "bShowTargetPredictionInfo",	false } );

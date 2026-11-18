@@ -163,6 +163,46 @@ float Ballistics::CalculateImpactDepth( const RE::NiPoint3& a_fireOrigin, const 
 	return ( a_impactPosition - a_fireOrigin ).Dot( direction );
 }
 
+bool Ballistics::CalculateFallbackBallisticAngles( const RE::NiPoint3& a_origin, const RE::NiPoint3& a_target, float a_projectileSpeed, float a_gravity, float& a_pitch, float& a_yaw )
+{
+	RE::NiPoint3 delta = a_target - a_origin;
+
+	float horizontalDistance = sqrt( delta.x * delta.x + delta.y * delta.y );
+
+	if(	!isfinite( horizontalDistance ) ||
+		!isfinite( delta.z ) ||
+		!isfinite( a_projectileSpeed ) ||
+		!isfinite( a_gravity ) ||
+		a_projectileSpeed <= 0.0f )
+	{
+		return false;
+	}
+
+	a_yaw = atan2( delta.x, delta.y );
+
+	if( a_gravity <= 0.0001f )
+	{
+		a_pitch = atan2( delta.z, horizontalDistance );
+		return isfinite( a_pitch ) && isfinite( a_yaw );
+	}
+
+	float speedSquared = a_projectileSpeed * a_projectileSpeed;
+	float elevationTerm = speedSquared + 2.0f * a_gravity * delta.z;
+
+	if( elevationTerm <= 0.0f )
+	{
+		// The target is so far below the origin that the maximum-range
+		// equation has no finite tangent solution. Aim directly instead.
+		a_pitch = atan2( delta.z, horizontalDistance );
+	}
+	else
+	{
+		a_pitch = atan2( a_projectileSpeed, sqrt( elevationTerm ) );
+	}
+
+	return isfinite( a_pitch ) && isfinite( a_yaw );
+}
+
 RE::NiPoint3 Ballistics::GetPlayerAimPosition()
 {
 	auto player = RE::PlayerCharacter::GetSingleton();
@@ -310,6 +350,17 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 					RE::NiPoint3 aimPoint = interceptLocation;
 					aimPoint.z += 0.5f * gravity * flightTime * flightTime;
 					aimLocation = aimPoint;
+				}
+				else if( originalPitch == FLT_MAX || originalYaw == FLT_MAX )
+				{
+					PrintDebugInfo( "Ballistic Solver failed. Projectile Speed: {}", a_projectileSpeed );
+					CalculateFallbackBallisticAngles(
+						a_origin,
+						aimLocation,
+						a_projectileSpeed,
+						gravity,
+						originalPitch,
+						originalYaw );
 				}
 			}
 		}
