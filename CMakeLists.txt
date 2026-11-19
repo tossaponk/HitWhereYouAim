@@ -9,7 +9,7 @@ endif()
 message(STATUS "vcpkg overlay ports: ${VCPKG_OVERLAY_PORTS}")
 
 set(PLUGIN_NAME "HitWhereYouAim")
-set(PLUGIN_VERSION "1.3.1")
+set(PLUGIN_VERSION "1.4.1")
 set(PLUGIN_AUTHOR "Tossapon")
 set(PLUGIN_DESCRIPTION "A crosshair aim correction plugin")
 
@@ -64,7 +64,14 @@ set(sources ${headers}
 	src/Utils.h
 	src/HitWhereYouAimAPI.h
 	src/TrueHUDAPI.h
+	src/TrueDirectionalMovementAPI.h
 	src/TrueHUDArrowTrail.h
+	src/Ballistics.h
+	src/Crosshair.h
+	src/Native.h
+	src/ProjectilePrediction.h
+	src/Raycast.h
+	src/TargetSelection.h
 )
 
 set(sources ${sources}
@@ -73,6 +80,12 @@ set(sources ${sources}
 	src/Hooks.cpp
 	src/Settings.cpp
 	src/HitWhereYouAimAPI.cpp
+	src/ProjectilePrediction.cpp
+	src/Ballistics.cpp
+	src/Crosshair.cpp
+	src/ProjectilePrediction.cpp
+	src/Raycast.cpp
+	src/TargetSelection.cpp
 )
 
 source_group(
@@ -146,6 +159,10 @@ target_link_libraries(
 	minhook::minhook
 )
 
+set_property(
+	TARGET CommonLibSSE
+	PROPERTY EXCLUDE_FROM_DEFAULT_BUILD TRUE
+)
 target_precompile_headers(
 	${PROJECT_NAME}
 	PRIVATE
