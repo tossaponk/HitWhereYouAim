@@ -48,6 +48,7 @@ namespace ProjectilePrediction
 		PredictorPool* GetPredictors( const RE::Projectile::LaunchData& a_launchData, RE::CFilter a_collisionFilter, const RE::NiPoint3* a_offsets );
 
 		void ReleasePredictor( PredictorPool* a_pool );
+		void Invalidate();
 
 		void Destroy();
 	private:
@@ -101,6 +102,7 @@ namespace ProjectilePrediction
 	};
 
 	void CleanUpPredictorCache();
+	void InvalidatePredictorCache();
 
 	class OriginCalibration
 	{

@@ -217,6 +217,7 @@ bool Crosshair::ResetTint( TintOwner a_owner )
 bool Crosshair::RestoreTint( Type a_type, TintOwner a_owner )
 {
 	std::lock_guard lock{ crosshairMutex };
+
 	auto& saved = a_type == Type::kNormal ? normalTransform : sneakTransform;
 
 	if( currentTintOwner != a_owner )
@@ -226,11 +227,14 @@ bool Crosshair::RestoreTint( Type a_type, TintOwner a_owner )
 		return true;
 
 	RE::GFxValue crosshair;
-
 	if( !GetCrosshair( crosshair, a_type ) )
 		return false;
 
-	return crosshair.SetCxform( saved.value );
+	if( !crosshair.SetCxform( saved.value ) )
+		return false;
+
+	saved.captured = false;
+	return true;
 }
 
 void Crosshair::Invalidate()
@@ -255,21 +259,54 @@ void Crosshair::Update()
 			RestoreTint( Type::kSneak, currentTintOwner );
 			sneakTransform.captured = false;
 		}
+
+		if( !normalTransform.captured && !sneakTransform.captured )
+		{
+			currentTintOwner = TintOwner::kNone;
+			crosshairTintTimeout = UINT_MAX;
+		}
 	}
 
 	if( time >= crosshairValidityTimeout )
 	{
 		Native::SetCrosshairValidity( true );
 		crosshairValidityTimeout = UINT_MAX;
+
+		if( currentTintOwner == TintOwner::kProjectilePrediction )
+		{
+			RestoreTint( Type::kSneak, TintOwner::kProjectilePrediction );
+
+			if( !sneakTransform.captured )
+				currentTintOwner = TintOwner::kNone;
+		}
 	}
 }
 
 void Crosshair::SetValidityState( bool a_valid )
 {
+	// Native forwarding controls the ordinary crosshair.
 	Native::SetCrosshairValidity( a_valid );
 
-	if( !a_valid )
-		crosshairValidityTimeout = GetCurrentGameRuntimeMS() + 1000;
-	else
+	if( a_valid )
+	{
+		if( currentTintOwner == TintOwner::kProjectilePrediction )
+		{
+			RestoreTint( Type::kSneak, TintOwner::kProjectilePrediction );
+
+			if( !normalTransform.captured && !sneakTransform.captured )
+			{
+				currentTintOwner = TintOwner::kNone;
+				crosshairTintTimeout = UINT_MAX;
+			}
+		}
+
 		crosshairValidityTimeout = UINT_MAX;
+	}
+	else
+	{
+		// Native validity forwarding does not recolor the sneak eye.
+		ApplyTint( Type::kSneak, 255, 128, 64, TintOwner::kProjectilePrediction, 1.0f );
+
+		crosshairValidityTimeout = GetCurrentGameRuntimeMS() + 1000;
+	}
 }

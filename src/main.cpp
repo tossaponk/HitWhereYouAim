@@ -76,7 +76,7 @@ namespace
 		case SKSE::MessagingInterface::kPreLoadGame:
 			g_lastCameraState = (RE::CameraState)-1;
 			TrueHUDArrowTrail::Stop();
-			ProjectilePrediction::CleanUpPredictorCache();
+			ProjectilePrediction::InvalidatePredictorCache();
 			ProjectilePrediction::MagicOriginCalibrationManager::GetSingleton()->Clear();
 			Raycast::ClearReleaseTargetCapture();
 

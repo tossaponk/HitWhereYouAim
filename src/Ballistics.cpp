@@ -422,7 +422,9 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 			cos( yaw ) * cos( pitch ),
 			sin( pitch )
 		};
-		aimLocation = a_origin + direction * Settings::fMaximumTargetDistance * meterToGameUnit;
+
+		float aimDistance = impactDepth > 0 ? Settings::fMaximumTargetDistance * meterToGameUnit : 1.0f;
+		aimLocation = a_origin + direction * aimDistance;
 		interceptLocation = aimLocation;
 	}
 

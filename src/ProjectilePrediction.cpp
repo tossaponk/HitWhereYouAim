@@ -267,6 +267,11 @@ void ProjectilePrediction::CleanUpPredictorCache()
 	PredictorPoolManager::GetSingleton()->Destroy();
 }
 
+void ProjectilePrediction::InvalidatePredictorCache()
+{
+	PredictorPoolManager::GetSingleton()->Invalidate();
+}
+
 ProjectilePrediction::PredictorPoolManager* ProjectilePrediction::PredictorPoolManager::GetSingleton()
 {
 	static PredictorPoolManager singleton;
@@ -383,6 +388,20 @@ void ProjectilePrediction::PredictorPoolManager::ReleasePredictor( PredictorPool
 	}
 }
 
+void ProjectilePrediction::PredictorPoolManager::Invalidate()
+{
+	std::lock_guard lock{ poolMutex };
+
+	for( auto i = 0; i < _poolCount; i++ )
+	{
+		for( auto j = 0; j < PredictorPool::kPredictorCount; j++ )
+			_predictorPool[ i ][ j ] = nullptr;
+
+		_predictorKey[ i ] = nullptr;
+		_inUse[ i ] = false;
+	}
+}
+
 void ProjectilePrediction::PredictorPoolManager::Destroy()
 {
 	std::lock_guard lock{ poolMutex };
@@ -444,6 +463,8 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		up * -collisionRadius
 	};
 
+	float backStepDistance = (Ballistics::GetPlayerAimPosition() - a_launchData.origin).Length();
+
 	PredictorPoolLease& predictors = _lease;
 	// Only simulate if all predictors are successfully created
 	if( predictors )
@@ -451,7 +472,7 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 		for( auto i = 0; i < PredictorPool::kPredictorCount; i++ )
 		{
 			auto predictor = (*predictors)[ i ];
-			if( !ResetPredictor( predictor, a_launchData, a_launchData.origin + originOffsets[ i ] ) )
+			if( !ResetPredictor( predictor, a_launchData, a_launchData.origin + originOffsets[ i ] - forward * backStepDistance ) )
 			{
 				PredictorTelemetry::GetSingleton()->RecordPrediction( result );
 				return result;
@@ -460,9 +481,6 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 
 		using updateMovementAndCollision_t = void( RE::Projectile*, float );
 		static REL::Relocation<updateMovementAndCollision_t> updateMovementAndCollision{ RELOCATION_ID( 43006, 44197 ) };
-
-		if( Settings::bShowFlightPrediction )
-			TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
 
 		g_nativeTeardownRequested = false;
 
@@ -478,6 +496,12 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 			{
 				auto predictor = (*predictors)[ i ];
 				auto& predictorRuntime = predictor->GetProjectileRuntimeData();
+
+				if( isFirstStep )
+				{
+					float predictorSpeed = predictorRuntime.linearVelocity.Length();
+					currentTimeStep = predictorSpeed > 0 ? backStepDistance / predictorSpeed : currentTimeStep;
+				}
 
 				PredictorTelemetry::GetSingleton()->RecordPredictionStep();
 
@@ -528,16 +552,28 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 					shouldContinue = false;
 					break;
 				}
+
+				if( isFirstStep )
+				{
+					predictorRuntime.distanceMoved = 0;
+					predictorRuntime.livingTime = 0;
+				}
 			}
 
-			if( Settings::bShowFlightPrediction )
-				TrueHUDArrowTrail::AppendTrailPosition( ((*predictors)[0])->GetPosition() );
-
-			simulatedTime += currentTimeStep;
 			if( isFirstStep )
 			{
 				isFirstStep = false;
 				currentTimeStep = simulationStep;
+
+				if( Settings::bShowFlightPrediction )
+					TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
+			}
+			else
+			{
+				simulatedTime += currentTimeStep;
+
+				if( Settings::bShowFlightPrediction )
+					TrueHUDArrowTrail::AppendTrailPosition( ((*predictors)[0])->GetPosition() );
 			}
 		}
 
