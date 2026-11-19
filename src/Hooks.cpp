@@ -446,8 +446,11 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 			if( shouldCorrectAimPitch )
 			{
+				bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 				// Third-person model firing angle adjustment for yaw
-				if( !Settings::bDisableAimHeading )
+				if( isTDMLockedOn )
+					player->SetGraphVariableFloat( "HWYA_AimHeadingCurrent", 0.0f );
+				else if( !Settings::bDisableAimHeading )
 					SetAimHeadingCorrection( *player, aimPos, lookTarget );
 
 				// Third-person pitch bias
