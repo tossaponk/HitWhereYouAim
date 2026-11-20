@@ -499,9 +499,9 @@ namespace Hooks
 
 		static bool Install()
 		{
-			static REL::Relocation<ConsoleQuit_t> consoleTarget{ REL::Offset( 0x36BE70 ) };
-			static REL::Relocation<MenuQuit_t> menuTarget{ REL::Offset( 0x98ED90 ) };
-			static REL::Relocation<WindowProc_t> windowTarget{ REL::Offset( 0x64C880 ) };
+			static REL::Relocation<ConsoleQuit_t> consoleTarget{ RELOCATION_ID( 22421, 22896 ) };
+			static REL::Relocation<MenuQuit_t> menuTarget{ RELOCATION_ID( 52369, 53265 ) };
+			static REL::Relocation<WindowProc_t> windowTarget{ RELOCATION_ID( 35635, 36649 ) };
 
 			auto create = []( auto& a_target, auto a_thunk, auto& a_original )
 				{
