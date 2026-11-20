@@ -484,7 +484,6 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 
 		g_nativeTeardownRequested = false;
 
-		float simulationStep = 1.0f / 30.0f; // 1/30 second time step
 		float maxSimulationTime = 10.0f; // 10 seconds
 		float simulatedTime = 0.0f;
 		float currentTimeStep = 0.0001f;
@@ -566,7 +565,7 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 				currentTimeStep = simulationStep;
 
 				if( Settings::bShowFlightPrediction )
-					TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition() );
+					TrueHUDArrowTrail::BeginStaticTrail( (*predictors)[0]->GetPosition(), TrueHUDArrowTrail::Type::kPredictorTrail );
 			}
 			else
 			{

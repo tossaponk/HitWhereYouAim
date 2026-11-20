@@ -117,7 +117,7 @@ namespace
 	{
 		Settings::Load();
 		Crosshair::ResetPosition();
-		TrueHUDArrowTrail::SetEnabled( Settings::bShowLastProjectilePath );
+		TrueHUDArrowTrail::SetEnabled( Settings::bShowLastProjectilePath || Settings::bShowFlightPrediction );
 		CandidateBoundsDebug::SetEnabled( Settings::bEnabledTargetPrediction );
 
 		auto player = RE::PlayerCharacter::GetSingleton();

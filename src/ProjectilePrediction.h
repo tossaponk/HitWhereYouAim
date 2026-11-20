@@ -27,6 +27,7 @@ struct ProjectilePredictionResult
 
 namespace ProjectilePrediction
 {
+	constexpr float simulationStep = 1.0f / 30.0f; // 1/30 second time step
 	struct PredictorPool
 	{
 		// This can be set to 5 for cardinal direction collision test.

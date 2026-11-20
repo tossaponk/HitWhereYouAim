@@ -43,6 +43,7 @@ public:
 				{
 					_armedReleaseSources = 0;
 					Raycast::ClearReleaseTargetCapture();
+					TrueHUDArrowTrail::Stop( TrueHUDArrowTrail::Type::kPredictorTrail );
 				}
 
 				continue;

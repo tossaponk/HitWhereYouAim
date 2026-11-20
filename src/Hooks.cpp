@@ -106,6 +106,7 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 
 		// Mark release target for delete when used
 		Raycast::MarkReleaseTargetConsumed();
+		TrueHUDArrowTrail::Stop( TrueHUDArrowTrail::kPredictorTrail );
 	}
 }
 
@@ -171,6 +172,7 @@ float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectil
 }
 
 static float currentPitch = FLT_MAX;
+static bool wasPredicting = false;
 extern RE::CameraState g_lastCameraState;
 float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch )
 {
@@ -306,6 +308,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 				auto effect = spell ? spell->GetAVEffect() : nullptr;
 				auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
+				auto attackState = player->AsActorState()->GetAttackState();
 				bool isAimedSpell = effect && isAiming &&
 					( delivery == RE::MagicSystem::Delivery::kAimed ||
 					  delivery == RE::MagicSystem::Delivery::kTargetActor );
@@ -321,7 +324,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 				bool isAimingCrossbow =
 					rangedType == RangedAttackType::kCrossbow &&
-					player->AsActorState()->GetAttackState() == RE::ATTACK_STATE_ENUM::kBowDrawn;
+					attackState == RE::ATTACK_STATE_ENUM::kBowDrawn;
 
 				bool needPrediction = hasRangedAttack &&
 					(
@@ -383,9 +386,11 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 									float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
 									float impactDistance = (aimPos - predictionResult.location).Length();
 									float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+									float stepTolerance = projectileSpeed * ProjectilePrediction::simulationStep;
 
 									float impactTolerance =
 										-10.0f -
+										stepTolerance -
 										rayPenetrationDepth -
 										GetProjectileImpactTolerance( projectileBase, launchData.spell );
 
@@ -446,12 +451,26 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 						}
 
 						if( Settings::bShowFlightPrediction )
-							TrueHUDArrowTrail::BeginRay( origin, rayDestination );
+							TrueHUDArrowTrail::BeginRay( origin, rayDestination, TrueHUDArrowTrail::Type::kPredictorTrail );
 					}
 
 					if( g_lastCameraState == currentCameraState )
 						Crosshair::SetValidityState( !isShotObstructed );
+
+					if( Settings::bShowFlightPrediction )
+					{
+						if( isShotObstructed )
+							TrueHUDArrowTrail::SetColor( 1.0f, 0.5f, 0.0f, 1.0f );
+						else
+							TrueHUDArrowTrail::SetColor( 0.0f, 1.0f, 0.6f, 1.0f );
+					}
+						
 				}
+
+				//if( wasPredicting && !needPrediction )
+				//	TrueHUDArrowTrail::Stop( TrueHUDArrowTrail::kPredictorTrail );
+
+				wasPredicting = needPrediction;
 			}
 
 			if( shouldCorrectAimPitch )
@@ -602,7 +621,10 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 		}
 
 		if( !a_this->IsFlameProjectile() && !a_this->IsBeamProjectile() )
-			TrueHUDArrowTrail::BeginArrow( a_this );
+		{
+			if( Settings::bShowLastProjectilePath )
+				TrueHUDArrowTrail::BeginArrow( a_this );
+		}
 	}
 }
 

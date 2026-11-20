@@ -9,9 +9,18 @@
 #include <mutex>
 #include <vector>
 
+constexpr uint32_t defaultTrailColor = 0xFF400DFF;
+constexpr uint32_t predictorTrailExpireMS = 500;
 class TrueHUDArrowTrail
 {
 public:
+	enum Type
+	{
+		kLiveTrail,
+		kPredictorTrail,
+		kTotal
+	};
+
 	static bool Install()
 	{
 		trueHUD = (TRUEHUD_API::IVTrueHUD3*)TRUEHUD_API::RequestPluginAPI( TRUEHUD_API::InterfaceVersion::V3 );
@@ -26,9 +35,17 @@ public:
 		return true;
 	}
 
-	static void BeginArrow( RE::Projectile* a_projectile )
+	static void BeginArrow( RE::Projectile* a_projectile, Type a_type = kLiveTrail )
 	{
 		std::scoped_lock lock( trailMutex );
+
+		if( a_type == kPredictorTrail )
+			expireTime = GetCurrentGameRuntimeMS() + predictorTrailExpireMS;
+		else
+			expireTime = UINT_MAX;
+
+		type = a_type;
+		color = defaultTrailColor;
 
 		projectileHandle.reset();
 		worldTrailPoints.clear();
@@ -49,20 +66,32 @@ public:
 		active = true;
 	}
 
-	static void BeginStaticTrail( const RE::NiPoint3& a_origin )
+	static void BeginStaticTrail( const RE::NiPoint3& a_origin, Type a_type = kLiveTrail )
 	{
 		std::scoped_lock lock( trailMutex );
 
+		if( a_type == kPredictorTrail )
+			expireTime = GetCurrentGameRuntimeMS() + predictorTrailExpireMS;
+		else
+			expireTime = UINT_MAX;
+
+		type = a_type;
 		projectileHandle.reset();
 		worldTrailPoints.clear();
 		active = false;
 		AppendPosition( a_origin );
 	}
 
-	static void BeginRay( const RE::NiPoint3& a_start, const RE::NiPoint3& a_end )
+	static void BeginRay( const RE::NiPoint3& a_start, const RE::NiPoint3& a_end, Type a_type = kLiveTrail )
 	{
 		std::scoped_lock lock( trailMutex );
 
+		if( a_type == kPredictorTrail )
+			expireTime = GetCurrentGameRuntimeMS() + predictorTrailExpireMS;
+		else
+			expireTime = UINT_MAX;
+
+		type = a_type;
 		projectileHandle.reset();
 		worldTrailPoints.clear();
 		active = false;
@@ -102,6 +131,9 @@ public:
 		if( !ui || ui->GameIsPaused() )
 			return;
 
+		//if( GetCurrentGameRuntimeMS() >= expireTime )
+		//	return Stop();
+
 		std::scoped_lock lock( trailMutex );
 
 		UpdateTrail();
@@ -130,13 +162,16 @@ public:
 		}
 	}
 
-	static void Stop()
+	static void Stop( Type a_type = kTotal )
 	{
 		std::scoped_lock lock( trailMutex );
 
-		projectileHandle.reset();
-		worldTrailPoints.clear();
-		active = false;
+		if( a_type == kTotal || a_type == type )
+		{
+			projectileHandle.reset();
+			worldTrailPoints.clear();
+			active = false;
+		}
 	}
 
 	static void SetWidth( float a_width )
@@ -347,7 +382,7 @@ private:
 	static inline RE::ObjectRefHandle projectileHandle;
 	static inline std::vector<RE::NiPoint3> worldTrailPoints;
 	static inline std::mutex trailMutex;
-	static inline uint32_t color = 0xFF400DFF;
+	static inline uint32_t color = defaultTrailColor;
 	static inline float trailWidth = 3.0f;
 	static inline float minimumPointDistance = 5.0f;
 	static inline float widthReferenceDistance = 1000.0f;
@@ -357,4 +392,6 @@ private:
 	static inline bool scaleWidthByDistance = true;
 	static inline bool active = false;
 	static inline bool enabled = true;
+	static inline Type type = kTotal;
+	static inline uint32_t expireTime = UINT_MAX;
 };
