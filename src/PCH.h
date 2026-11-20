@@ -155,7 +155,7 @@ namespace util
 		return result;
 	}
 
-	inline uintptr_t FindPatternInFunction( uintptr_t a_function, std::string_view a_pattern, size_t a_maxScan = 0x4000 )
+	inline uintptr_t FindPatternInFunction( uintptr_t a_function, std::string_view a_pattern, size_t a_maxScan = 0x4000, bool a_stopAtPadding = true )
 	{
 		auto pattern = ParsePattern( a_pattern );
 
@@ -168,7 +168,7 @@ namespace util
 
 		while( (uintptr_t)ptr < a_function + a_maxScan )
 		{
-			if( *(uint32_t*)ptr == 0xCCCCCCC3 )
+			if( a_stopAtPadding && *(uint32_t*)ptr == 0xCCCCCCC3 )
 			{
 				return 0;
 			}

@@ -20,6 +20,7 @@ bool Hooks::Install()
 	SpellTargetFinderHook::Install();
 	PredictorGetKillOnCollisionHook::Install();
 	PredictorCheckSaveGameHook::Install();
+	QuitGameHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
 	//Test::VATSRangedEvaluationHook::Install();
@@ -301,7 +302,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				bool isAiming = false;
 				player->GetGraphVariableBool( "bAimActive", isAiming );
 
-				isAiming |= IsCastingRangedSpell( *player, rangedType == RangedAttackType::kLeftHand );
+				isAiming |= IsCastingRangedSpell( *player, source == RE::MagicSystem::CastingSource::kLeftHand );
 
 				auto effect = spell ? spell->GetAVEffect() : nullptr;
 				auto delivery = effect ? effect->data.delivery : RE::MagicSystem::Delivery::kNone;
@@ -322,10 +323,12 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 					rangedType == RangedAttackType::kCrossbow &&
 					player->AsActorState()->GetAttackState() == RE::ATTACK_STATE_ENUM::kBowDrawn;
 
-				bool needPrediction =
-					isAimedSpell ||
-					isDrawingBow ||
-					isAimingCrossbow;
+				bool needPrediction = hasRangedAttack &&
+					(
+						isAimedSpell ||
+						isDrawingBow ||
+						isAimingCrossbow
+					);
 
 				if( needPrediction && isReachabilitySupported )
 				{
@@ -406,14 +409,21 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 					{
 						RE::bhkPickData pickData{};
 						RE::NiPoint3 rayDestination;
+						RE::TESObjectREFR* rayTarget = nullptr;
 
-						auto rayTarget = Raycast::GetTarget(
-							origin,
-							targetLocation,
-							filter.GetSystemGroup(),
-							RE::COL_LAYER::kLOS,
-							&rayDestination,
-							&pickData );
+						RE::NiPoint3 rayDirection = targetLocation - origin;
+						if( rayDirection.Unitize() > 0.0001f )
+						{
+							RE::NiPoint3 rayEnd = origin + rayDirection * Settings::fMaximumTargetDistance * meterToGameUnit;
+
+							rayTarget = Raycast::GetTarget(
+								origin,
+								rayEnd,
+								filter.GetSystemGroup(),
+								filter.GetCollisionLayer(),
+								&rayDestination,
+								&pickData );
+						}
 
 						if( isTargetActor )
 						{

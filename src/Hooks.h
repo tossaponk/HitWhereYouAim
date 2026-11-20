@@ -7,6 +7,7 @@
 #include "TrueHUDArrowTrail.h"
 #include "CandidateBoundsDebug.h"
 #include "PredictorTelemetry.h"
+#include "REX/FModule.h"
 
 extern thread_local bool g_nativeTeardownRequested;
 namespace Hooks
@@ -368,6 +369,157 @@ namespace Hooks
 			else
 				REX::DEBUG( "Predictor::PredictorCheckSaveGameHook hook installed" );
 		}
+	};
+
+	// Precision and OAR improperly dereference destroyed game-owned objects during CRT shutdown.
+	// This is harmless to users, but suppress the noisy exceptions in Debug builds.
+	struct ExternalExitFix
+	{
+		static bool Install()
+		{
+#ifdef _DEBUG
+			bool precisionInstalled = InstallHook(
+				"Precision.dll",
+				"48 89 5C 24 10 48 89 74 24 18 57 48 83 EC 30 48 8B F9 48 8D 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 44 0F B6 47 18",
+				PrecisionThunk, &precisionFunc );
+
+			bool oarInstalled = InstallHook(
+				"OpenAnimationReplacer.dll",
+				"48 89 5C 24 10 48 89 6C 24 18 48 89 74 24 20 57 48 83 EC 30 48 8B D9 48 81 C1 68 05 00 00 E8 ?? ?? ?? ?? 48 8B 83 58 05 00 00",
+				OARThunk, &oarFunc );
+
+			return precisionInstalled && oarInstalled;
+#else
+			return true;
+#endif
+		}
+
+		static void BeginQuit()
+		{
+#ifdef _DEBUG
+			isQuitting = true;
+#endif
+		}
+
+	private:
+#ifdef _DEBUG
+		using Destructor_t = void( void* );
+
+		static void PrecisionThunk( void* a_this )
+		{
+			if( !isQuitting )
+				precisionFunc( a_this );
+		}
+
+		static void OARThunk( void* a_this )
+		{
+			if( !isQuitting )
+				oarFunc( a_this );
+		}
+
+		static bool InstallHook( std::string_view a_moduleName, std::string_view a_pattern, Destructor_t* a_thunk, Destructor_t** a_func )
+		{
+			auto module = REX::FModule::GetLoadedModule( a_moduleName );
+			if( !module.GetBaseAddress() )
+				return true;
+
+			auto text = module.GetSection( ".text" );
+			if( !text.GetAddress() || !text.GetSize() )
+			{
+				REX::WARN( "{} executable section was not found", a_moduleName );
+				return false;
+			}
+
+			auto address = util::FindPatternInFunction( text.GetAddress(), a_pattern, text.GetSize(), false );
+			if( !address )
+			{
+				REX::WARN( "{} exit-fix pattern was not found", a_moduleName );
+				return false;
+			}
+
+			auto result = MH_CreateHook( (void*)address, a_thunk, (void**)a_func );
+			if( result == MH_OK && ( result = MH_EnableHook( (void*)address ) ) != MH_OK )
+			{
+				MH_RemoveHook( (void*)address );
+				*a_func = nullptr;
+			}
+
+			if( result != MH_OK )
+			{
+				REX::WARN( "Failed to install {} exit-fix hook[ Result:{} ]", a_moduleName, (int)result );
+				return false;
+			}
+
+			REX::INFO( "{} exit fix installed[ Offset:0x{:X} ]", a_moduleName, address - module.GetBaseAddress() );
+			return true;
+		}
+
+		static inline Destructor_t* precisionFunc;
+		static inline Destructor_t* oarFunc;
+		static inline std::atomic_bool isQuitting = false;
+#endif
+	};
+
+	struct QuitGameHook
+	{
+		using ConsoleQuit_t = bool();
+		using MenuQuit_t = void();
+		using WindowProc_t = LRESULT( HWND, UINT, WPARAM, LPARAM );
+
+		static void CleanUp()
+		{
+			if( cleaned.exchange( true ) )
+				return;
+
+			ProjectilePrediction::CleanUpPredictorCache();
+
+			// Fix crash on exit for external mods try cleaning up after the game teardown.
+			ExternalExitFix::BeginQuit();
+		}
+
+		static bool ConsoleQuit()
+		{
+			CleanUp();
+			return consoleQuit();
+		}
+
+		static void MenuQuit()
+		{
+			CleanUp();
+			menuQuit();
+		}
+
+		static LRESULT WindowProc( HWND a_window, UINT a_message, WPARAM a_wParam, LPARAM a_lParam )
+		{
+			if( a_message == WM_DESTROY )
+				CleanUp();
+
+			return windowProc( a_window, a_message, a_wParam, a_lParam );
+		}
+
+		static bool Install()
+		{
+			static REL::Relocation<ConsoleQuit_t> consoleTarget{ REL::Offset( 0x36BE70 ) };
+			static REL::Relocation<MenuQuit_t> menuTarget{ REL::Offset( 0x98ED90 ) };
+			static REL::Relocation<WindowProc_t> windowTarget{ REL::Offset( 0x64C880 ) };
+
+			auto create = []( auto& a_target, auto a_thunk, auto& a_original )
+				{
+					return
+						MH_CreateHook( (void*)a_target.address(), (void*)a_thunk, (void**)&a_original ) == MH_OK &&
+						MH_EnableHook( (void*)a_target.address() ) == MH_OK;
+				};
+
+			return
+				create( consoleTarget, ConsoleQuit, consoleQuit ) &&
+				create( menuTarget, MenuQuit, menuQuit ) &&
+				create( windowTarget, WindowProc, windowProc );
+		}
+
+		static inline ConsoleQuit_t* consoleQuit;
+		static inline MenuQuit_t* menuQuit;
+		static inline WindowProc_t* windowProc;
+		static inline std::atomic_bool cleaned = false;
 	};
 
 	bool Install();

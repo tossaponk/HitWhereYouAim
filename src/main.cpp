@@ -85,6 +85,10 @@ namespace
 			TrueHUDArrowTrail::Install();
 			CandidateBoundsDebug::Install();
 
+#ifdef _DEBUG
+			Hooks::ExternalExitFix::Install();
+#endif // _DEBUG
+
 			g_TDMAPI = (TDM_API::IVTDM1*)TDM_API::RequestPluginAPI( TDM_API::InterfaceVersion::V1 );
 
 			break;

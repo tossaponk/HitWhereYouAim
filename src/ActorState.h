@@ -142,64 +142,71 @@ inline bool GetRangedAttackData(
 	RE::BGSProjectile** out_projectileBase = nullptr,
 	RE::MagicSystem::CastingSource* out_source = nullptr )
 {
-	if( !a_actor )
-		return false;
-
 	if( out_type )				*out_type = RangedAttackType::kNone;
 	if( out_weapon )			*out_weapon = nullptr;
 	if( out_spell )				*out_spell = nullptr;
 	if( out_projectileBase )	*out_projectileBase = nullptr;
 	if( out_source )			*out_source = RE::MagicSystem::CastingSource::kNone;
 
+	if( !a_actor )
+		return false;
+
 	auto equippedLeft = a_actor->GetEquippedObject( true );
 	auto equippedRight = a_actor->GetEquippedObject( false );
-	if( IsUsingRangedAttack( *a_actor ) )
-	{
-		// Ranged weapon is always in the right hand
-		auto weapon = equippedRight ? equippedRight->As<RE::TESObjectWEAP>() : nullptr;
-		if( out_weapon ) *out_weapon = weapon;
 
-		if( weapon )
+	// Ranged weapon is always in the right hand
+	auto weapon = equippedRight ? equippedRight->As<RE::TESObjectWEAP>() : nullptr;
+	if( weapon && weapon->IsRanged() )
+	{
+		if( out_weapon ) *out_weapon = weapon;
+		if( out_projectileBase )
+		{
+			auto ammo = a_actor->GetCurrentAmmo();
+			*out_projectileBase = ammo ? ammo->data.projectile : nullptr;
+		}
+
+		if( IsUsingRangedAttack( *a_actor ) )
 		{
 			if( out_type ) *out_type = weapon->IsBow() ? RangedAttackType::kBow : RangedAttackType::kCrossbow;
-			if( out_projectileBase )
-			{
-				auto ammo = a_actor->GetCurrentAmmo();
-				*out_projectileBase = ammo ? ammo->data.projectile : nullptr;
-			}
-
 			return true;
 		}
 	}
 
 	// Right-hand casting takes precedence over left-hand casting
-	if( IsCastingRangedSpell( *a_actor, false ) )
+	auto rightSpell = equippedRight ? equippedRight->As<RE::MagicItem>() : nullptr;
+	bool hasRightSpell = rightSpell && IsRangedMagic( rightSpell );
+	if( hasRightSpell )
 	{
-		auto spell = equippedRight ? equippedRight->As<RE::MagicItem>() : nullptr;
-		if( out_spell ) *out_spell = spell;
+		if( out_spell ) *out_spell = rightSpell;
+		if( out_source ) *out_source = RE::MagicSystem::CastingSource::kRightHand;
+		if( out_projectileBase ) *out_projectileBase = GetEquippedMagicProjectile( a_actor, false );
 
-		if( spell )
+		if( IsCastingRangedSpell( *a_actor, false ) )
 		{
-			if( out_source ) *out_source = RE::MagicSystem::CastingSource::kRightHand;
 			if( out_type ) *out_type = RangedAttackType::kRightHand;
-			if( out_projectileBase ) *out_projectileBase = GetEquippedMagicProjectile( a_actor, false );
 			return true;
-		}	
+		}
 	}
 
 	// Left-hand casting
-	if( IsCastingRangedSpell( *a_actor, true ) )
+	auto leftSpell = equippedLeft ? equippedLeft->As<RE::MagicItem>() : nullptr;
+	bool hasLeftSpell = leftSpell && IsRangedMagic( leftSpell );
+	if( hasLeftSpell && IsCastingRangedSpell( *a_actor, true ) )
 	{
-		auto spell = equippedLeft ? equippedLeft->As<RE::MagicItem>() : nullptr;
-		if( out_spell ) *out_spell = spell;
+		if( out_weapon ) *out_weapon = nullptr;
+		if( out_spell ) *out_spell = leftSpell;
+		if( out_source ) *out_source = RE::MagicSystem::CastingSource::kLeftHand;
+		if( out_projectileBase ) *out_projectileBase = GetEquippedMagicProjectile( a_actor, true );
+		if( out_type ) *out_type = RangedAttackType::kLeftHand;
+		return true;
+	}
 
-		if( spell )
-		{
-			if( out_source ) *out_source = RE::MagicSystem::CastingSource::kLeftHand;
-			if( out_type ) *out_type = RangedAttackType::kLeftHand;
-			if( out_projectileBase ) *out_projectileBase = GetEquippedMagicProjectile( a_actor, true );
-			return true;
-		}
+	// Right-hand ranged spell remains the preferred inactive fallback
+	if( !hasRightSpell && hasLeftSpell )
+	{
+		if( out_spell ) *out_spell = leftSpell;
+		if( out_source ) *out_source = RE::MagicSystem::CastingSource::kLeftHand;
+		if( out_projectileBase ) *out_projectileBase = GetEquippedMagicProjectile( a_actor, true );
 	}
 
 	return false;
