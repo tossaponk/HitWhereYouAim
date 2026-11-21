@@ -2,6 +2,7 @@
 #define NOMINMAX
 #define NOGDI
 #define WIN32_LEAN_AND_MEAN
+//#define HWYA_PROFILER_ACTIVE
 
 #include <RE/Skyrim.h>
 #include <REX/REX.h>
@@ -221,6 +222,96 @@ namespace util
 		return NULL;
 	}
 }
+
+class Profiler
+{
+public:
+	enum Component : uint8_t
+	{
+		kAimPitch,
+		kAimValidation,
+		kResolveCrosshairAim,
+		kTargetPrediction,
+		kProjectilePrediction,
+		kRaycastValidation,
+		kCrosshairUpdate,
+		kTrailUpdate,
+		kTotal
+	};
+
+	class Scope
+	{
+	public:
+		explicit Scope( Component a_component ) :
+			component( a_component ),
+			start( Clock::now() )
+		{}
+
+		~Scope()
+		{
+			auto elapsed = std::chrono::duration_cast<std::chrono::nanoseconds>( Clock::now() - start ).count();
+			auto& data = components[ component ];
+
+			data.total.fetch_add( elapsed, std::memory_order_relaxed );
+			data.count.fetch_add( 1, std::memory_order_relaxed );
+
+			auto maximum = data.maximum.load( std::memory_order_relaxed );
+			while( elapsed > maximum && !data.maximum.compare_exchange_weak( maximum, elapsed, std::memory_order_relaxed ) )
+			{}
+		}
+
+	private:
+		using Clock = std::chrono::steady_clock;
+
+		Component component;
+		Clock::time_point start;
+	};
+
+	static void Report()
+	{
+		for( size_t i = 0; i < kTotal; ++i )
+		{
+			auto count = components[ i ].count.exchange( 0, std::memory_order_relaxed );
+			auto total = components[ i ].total.exchange( 0, std::memory_order_relaxed );
+			auto maximum = components[ i ].maximum.exchange( 0, std::memory_order_relaxed );
+
+			if( !count )
+				continue;
+
+			double totalMS = (double)total / 1'000'000.0;
+			double averageUS = (double)total / (double)count / 1'000.0;
+			double maximumUS = (double)maximum / 1'000.0;
+
+			REX::INFO(
+				"Profiler[ Component:{}, Calls:{}, Total:{:.3f} ms, Average:{:.3f} us, Maximum:{:.3f} us ]",
+				names[ i ],
+				count,
+				totalMS,
+				averageUS,
+				maximumUS );
+		}
+	}
+
+private:
+	struct Data
+	{
+		std::atomic_int64_t total{ 0 };
+		std::atomic_uint64_t count{ 0 };
+		std::atomic_int64_t maximum{ 0 };
+	};
+
+	static inline std::array<Data, kTotal> components;
+	static inline constexpr std::array names{
+		"AimPitch",
+		"AimValidation",
+		"ResolveCrosshairAim",
+		"TargetPrediction",
+		"ProjectilePrediction",
+		"RaycastValidation",
+		"CrosshairUpdate",
+		"TrailUpdate"
+	};
+};
 
 constexpr uint64_t RELOCATION_RAW( const uint64_t se, const uint64_t ae )
 {

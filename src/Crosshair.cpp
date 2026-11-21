@@ -245,6 +245,10 @@ void Crosshair::Invalidate()
 
 void Crosshair::Update()
 {
+#ifdef HWYA_PROFILER_ACTIVE
+	Profiler::Scope profiler( Profiler::kCrosshairUpdate );
+#endif // HWYA_PROFILER_ACTIVE
+
 	auto time = GetCurrentGameRuntimeMS();
 	if( time >= crosshairTintTimeout )
 	{

@@ -234,6 +234,10 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, const float a_pitch, bool& a_valid )
 {
+#ifdef HWYA_PROFILER_ACTIVE
+	Profiler::Scope profiler( Profiler::kAimPitch );
+#endif // HWYA_PROFILER_ACTIVE
+
 	a_valid = false;
 	float result = a_pitch;
 
@@ -336,6 +340,10 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 
 			if( enableAimValidation && !IsTDMLockedOn() )
 			{
+#ifdef HWYA_PROFILER_ACTIVE
+				Profiler::Scope profilerAV( Profiler::kAimValidation );
+#endif // HWYA_PROFILER_ACTIVE
+
 				RE::Projectile::LaunchData launchData{};
 				launchData.origin = origin;
 				launchData.useOrigin = true;
@@ -484,6 +492,10 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 					}
 					else
 					{
+#ifdef HWYA_PROFILER_ACTIVE
+						Profiler::Scope profilerRV( Profiler::kRaycastValidation );
+#endif // HWYA_PROFILER_ACTIVE
+
 						RE::bhkPickData pickData{};
 						RE::NiPoint3 rayDestination;
 						RE::TESObjectREFR* rayTarget = nullptr;

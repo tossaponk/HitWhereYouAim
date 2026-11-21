@@ -426,6 +426,10 @@ void ProjectilePrediction::PredictorPoolManager::Destroy()
 // This is the reimplementation of the game native VATS projectile simulator with unused functions pruned
 ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::Projectile::LaunchData& a_launchData )
 {
+#ifdef HWYA_PROFILER_ACTIVE
+	Profiler::Scope profiler( Profiler::kProjectilePrediction );
+#endif // HWYA_PROFILER_ACTIVE
+
 #ifdef _DEBUG
 	PredictorTelemetryLease telemetryLease;
 #endif

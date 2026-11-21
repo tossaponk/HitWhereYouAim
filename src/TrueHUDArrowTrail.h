@@ -123,6 +123,10 @@ public:
 
 	static void Update()
 	{
+#ifdef HWYA_PROFILER_ACTIVE
+		Profiler::Scope profiler( Profiler::kTrailUpdate );
+#endif // HWYA_PROFILER_ACTIVE
+
 		if( !enabled || !trueHUD )
 			return;
 

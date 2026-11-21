@@ -283,6 +283,17 @@ namespace Hooks
 			CandidateBoundsDebug::Update();
 			Raycast::Update();
 			Crosshair::Update();
+
+#ifdef HWYA_PROFILER_ACTIVE
+			static float profilerTimer = 0.0f;
+			profilerTimer += a_delta;
+
+			if( profilerTimer >= 5.0f )
+			{
+				profilerTimer = 0.0f;
+				Profiler::Report();
+			}
+#endif // HWYA_PROFILER_ACTIVE
 		}
 
 		static inline REL::Relocation<decltype( thunk )> func;

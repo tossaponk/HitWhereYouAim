@@ -216,6 +216,10 @@ RE::NiPoint3 Ballistics::GetPlayerAimPosition()
 
 std::pair<RE::TESObjectREFR*,RE::TESObjectREFR*> Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, float a_projectileSpeed, float a_projectileGravity, RE::NiPoint3* out_aimPoint, RE::NiPoint3* out_TargetLoc, float* out_pitch, float* out_yaw )
 {
+#ifdef HWYA_PROFILER_ACTIVE
+	Profiler::Scope profiler( Profiler::kResolveCrosshairAim );
+#endif
+
 	RE::TESObjectREFR* crosshairTarget = nullptr;
 	RE::TESObjectREFR* predictedTarget = nullptr;
 
