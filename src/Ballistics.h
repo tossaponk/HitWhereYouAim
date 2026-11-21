@@ -53,7 +53,7 @@ namespace Ballistics
 
 	RE::NiPoint3 GetPlayerAimPosition();
 
-	RE::TESObjectREFR* ResolveCrosshairAim(
+	std::pair<RE::TESObjectREFR*,RE::TESObjectREFR*> ResolveCrosshairAim(
 		RE::NiPoint3& a_origin,
 		float a_projectileSpeed,
 		float a_projectileGravity,

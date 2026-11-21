@@ -272,9 +272,13 @@ namespace Hooks
 
 	struct PlayerUpdateHook
 	{
+		static float CalculateAimPitch( RE::AIProcess* a_process, const float a_pitch, bool& a_valid );
+		static void UpdateAimPitch( RE::PlayerCharacter* a_player );
+
 		static void thunk( RE::PlayerCharacter* a_this, float a_delta )
 		{
 			func( a_this, a_delta );
+			UpdateAimPitch( a_this );
 			TrueHUDArrowTrail::Update();
 			CandidateBoundsDebug::Update();
 			Raycast::Update();

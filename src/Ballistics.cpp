@@ -214,10 +214,13 @@ RE::NiPoint3 Ballistics::GetPlayerAimPosition()
 	return aimPos;
 }
 
-RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, float a_projectileSpeed, float a_projectileGravity, RE::NiPoint3* out_aimPoint, RE::NiPoint3* out_TargetLoc, float* out_pitch, float* out_yaw )
+std::pair<RE::TESObjectREFR*,RE::TESObjectREFR*> Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, float a_projectileSpeed, float a_projectileGravity, RE::NiPoint3* out_aimPoint, RE::NiPoint3* out_TargetLoc, float* out_pitch, float* out_yaw )
 {
+	RE::TESObjectREFR* crosshairTarget = nullptr;
+	RE::TESObjectREFR* predictedTarget = nullptr;
+
 	if( a_projectileSpeed <= 0 )
-		return nullptr;
+		return std::make_pair( crosshairTarget, predictedTarget );
 
 	auto originalPitch = out_pitch ? *out_pitch : FLT_MAX;
 	auto originalYaw = out_yaw ? *out_yaw : FLT_MAX;
@@ -227,7 +230,6 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 
 	RE::NiPoint3 aimLocation;
 	RE::bhkPickData pickData;
-	RE::TESObjectREFR* crosshairTarget = nullptr;
 	RE::TESObjectREFRPtr cachedTarget;
 	if( !Raycast::GetReleaseTargetCapture( &aimLocation, &pickData, &cachedTarget ) )
 	{
@@ -238,7 +240,7 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 		crosshairTarget = cachedTarget.get();
 	}
 
-	auto predictedTarget = crosshairTarget;
+	predictedTarget = crosshairTarget;
 	bool mustUseCrosshair = crosshairTarget != nullptr;
 	if( mustUseCrosshair )
 	{
@@ -459,5 +461,5 @@ RE::TESObjectREFR* Ballistics::ResolveCrosshairAim( RE::NiPoint3& a_origin, floa
 	if( out_aimPoint )	*out_aimPoint = aimLocation;
 	if( out_TargetLoc )	*out_TargetLoc = interceptLocation;
 
-	return crosshairTarget;
+	return std::make_pair( crosshairTarget, predictedTarget );
 }

@@ -30,6 +30,10 @@ bool Hooks::Install()
 }
 
 static float pitchVelocity = 0.0f;
+static constexpr bool IsTDMLockedOn()
+{
+	return g_TDMAPI ? g_TDMAPI->GetTargetLockState() : false;
+}
 
 void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileLaunchAngle(
 	[[maybe_unused]] RE::PlayerCharacter* a_player,
@@ -73,7 +77,7 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 	{
 		auto projectileSpeed = a_projectile->GetSpeed();
 		auto projectileGravity = a_projectile->GetGravity() * Native::GetWorldGravity();
-		auto target = Ballistics::ResolveCrosshairAim(
+		auto [target,predictedTarget] = Ballistics::ResolveCrosshairAim(
 			a_origin ? *a_origin : a_launchNode->world.translate,
 			projectileSpeed,
 			projectileGravity,
@@ -112,9 +116,8 @@ void Hooks::PlayerProjectileCalculateLaunchAngleHook::CalculatePlayerProjectileL
 
 float Hooks::ConcentrationSpellAngleHook::SetAimPitch( RE::Projectile* a_projectile, float a_angle, func_t* func )
 {
-	bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 	auto shooter = a_projectile->GetProjectileRuntimeData().shooter;
-	if( Settings::bEnabled && !isTDMLockedOn && shooter.native_handle() == 0x100000 && playerPitch != FLT_MAX )
+	if( Settings::bEnabled && !IsTDMLockedOn() && shooter.native_handle() == 0x100000 && playerPitch != FLT_MAX )
 	{
 		auto cameraState = GetCurrentPlayerCameraState();
 		if( cameraState == RE::CameraState::kFirstPerson ||
@@ -130,10 +133,9 @@ float Hooks::ConcentrationSpellAngleHook::SetAimPitch( RE::Projectile* a_project
 
 float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectile, float a_angle, func_t* func )
 {
-	bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 	auto& runtimeData = a_projectile->GetProjectileRuntimeData();
 	auto shooter = runtimeData.shooter;
-	if( Settings::bEnabled && !isTDMLockedOn && shooter.native_handle() == 0x100000 )
+	if( Settings::bEnabled && !IsTDMLockedOn() && shooter.native_handle() == 0x100000 )
 	{
 		auto cameraState = GetCurrentPlayerCameraState();
 		if( cameraState == RE::CameraState::kFirstPerson ||
@@ -171,11 +173,68 @@ float Hooks::ConcentrationSpellAngleHook::SetAimYaw( RE::Projectile* a_projectil
 	return func( a_projectile, a_angle );
 }
 
+// Pack aim pitch data into an atomic storage to avoid using lock when read and writing
+static constexpr uint64_t PackAimPitch( float a_pitch, RE::CameraState a_cameraState, bool a_valid )
+{
+	uint64_t result = std::bit_cast<uint32_t>( a_pitch );
+	result |= (uint64_t)(uint8_t)a_cameraState << 32;
+	result |= (uint64_t)a_valid << 40;
+	return result;
+}
+
+// First 32 bits are float for pitch angle
+static float UnpackAimPitch( uint64_t a_data )
+{
+	return std::bit_cast<float>((uint32_t)a_data);
+}
+
+// 8 Bits from 33-40 is the camera state enum
+static RE::CameraState UnpackAimPitchCameraState( uint64_t a_data )
+{
+	return (RE::CameraState)(uint8_t)( a_data >> 32 );
+}
+
+// Bit 41 is the boolean for validity state
+static bool IsCachedAimPitchValid( uint64_t a_data )
+{
+	return ( a_data & ( 1ULL << 40 ) ) != 0;
+}
+
 static float currentPitch = FLT_MAX;
+static std::atomic_uint32_t lastNativePitch{ std::bit_cast<uint32_t>( FLT_MAX ) };
+static std::atomic_uint64_t cachedAimPitch{ 0 };
 static bool wasPredicting = false;
 extern RE::CameraState g_lastCameraState;
+
+static_assert( std::atomic_uint32_t::is_always_lock_free );
+static_assert( std::atomic_uint64_t::is_always_lock_free );
+
+// Accessing the player node transformation in this function is dangerous.
+// It's subjected to a race condition from animation update thread writing the transform for FPS mode.
+// TPS mode is somehow not affected.
+// Aim pitch calculation now moved to player update thread, which has synchronized transform data.
+// This function now only read the cached aim pitch data from a packed atomic storage calculated in player update thread without using lock.
 float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process, const float a_pitch )
 {
+	auto player = RE::PlayerCharacter::GetSingleton();
+	if( !player || a_process != player->GetActorRuntimeData().currentProcess )
+		return a_pitch;
+
+	lastNativePitch.store( std::bit_cast<uint32_t>( a_pitch ), std::memory_order_relaxed );
+
+	auto cache = cachedAimPitch.load( std::memory_order_acquire );
+	if( !IsTDMLockedOn() && IsCachedAimPitchValid( cache ) && UnpackAimPitchCameraState( cache ) == GetCurrentPlayerCameraState() )
+	{
+		auto pitch = UnpackAimPitch( cachedAimPitch );
+		return pitch;
+	}
+
+	return a_pitch;
+}
+
+float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, const float a_pitch, bool& a_valid )
+{
+	a_valid = false;
 	float result = a_pitch;
 
 	RE::PlayerCharacter* player = RE::PlayerCharacter::GetSingleton();
@@ -240,9 +299,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				origin = launchNode ? launchNode->world.translate : aimPos;
 			}
 
-			[[maybe_unused]]
-			auto target =
-				Ballistics::ResolveCrosshairAim(
+			
+			Ballistics::ResolveCrosshairAim(
 				aimPos,
 				projectileSpeed,
 				Settings::IsAutomaticPitchEnabled() ? projectileGravity : 0,
@@ -276,7 +334,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				( isFirstPerson && Settings::bEnableFPSAimValidation ) ||
 				( isThirdPerson && Settings::bEnableTPSAimValidation );
 
-			if( enableAimValidation )
+			if( enableAimValidation && !IsTDMLockedOn() )
 			{
 				RE::Projectile::LaunchData launchData{};
 				launchData.origin = origin;
@@ -354,7 +412,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 							projectileSpeed = predictorProjectile->GetSpeed();
 							projectileGravity = predictorProjectile->GetGravity() * Native::GetWorldGravity();
 
-							Ballistics::ResolveCrosshairAim(
+							auto [crosshairTarget, predictedTarget] = Ballistics::ResolveCrosshairAim(
 								origin,
 								projectileSpeed,
 								projectileGravity,
@@ -362,6 +420,8 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 								&predictorTargetLoc,
 								&launchData.angleX,
 								&launchData.angleZ );
+
+							auto predictedActor = predictedTarget ? predictedTarget->As<RE::Actor>() : nullptr;
 
 							auto predictionResult = predictor.Predict( launchData );
 							if( predictionResult.type == ProjectilePredictionResult::kImpacted )
@@ -379,21 +439,23 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 								}
 
 								bool shouldUseFixedAngleValidation = Settings::IsFixedAngleEnabled() && projectileGravity > 0.001f;
-								constexpr float fixedAngleMinimumTravelRatio = 0.8f;
+								constexpr float fixedAngleMinimumTravelRatio = 0.6f;
+
+								float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
+								float impactDistance = (aimPos - predictionResult.location).Length();
+								float crosshairDistance = (aimPos - predictorTargetLoc).Length();
+								float stepTolerance = projectileSpeed * ProjectilePrediction::simulationStep;
+								float targetDistance = predictedActor ? (aimPos - predictedActor->GetPosition()).Length() : 0.0f;
+
+								float impactTolerance =
+									-10.0f -
+									stepTolerance -
+									rayPenetrationDepth -
+									GetProjectileImpactTolerance( projectileBase, launchData.spell );
+
 								// Use direct impact for automatic pitch and no-gravity projectiles
 								if( !shouldUseFixedAngleValidation )
 								{
-									float rayPenetrationDepth = Settings::fRayPenetrationDepth * meterToGameUnit;
-									float impactDistance = (aimPos - predictionResult.location).Length();
-									float crosshairDistance = (aimPos - predictorTargetLoc).Length();
-									float stepTolerance = projectileSpeed * ProjectilePrediction::simulationStep;
-
-									float impactTolerance =
-										-10.0f -
-										stepTolerance -
-										rayPenetrationDepth -
-										GetProjectileImpactTolerance( projectileBase, launchData.spell );
-
 									//REX::DEBUG( "Impact depth: {}, crosshair depth: {}", impactDistance, crosshairDistance );
 
 									if( impactDistance - crosshairDistance < impactTolerance )
@@ -402,10 +464,20 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 										//REX::DEBUG( "Applying red tint: Impact blocked" );
 									}
 								}
-								else // Require at least 80% distance travelled to be considered unobstructed for fixed angle mode
+								else // Require at least 60% distance travelled to be considered unobstructed for fixed angle mode
 								{
-									float crosshairDistance = (origin - lookTarget).Length();
-									isShotObstructed = predictionResult.distanceMoved < crosshairDistance * fixedAngleMinimumTravelRatio;
+
+									if( predictedActor )
+										isShotObstructed = impactDistance - targetDistance < impactTolerance;
+									else if( impactRef )
+									{
+										RE::NiPoint3 targetVelocity{};
+										impactRef->GetLinearVelocity( targetVelocity );
+										bool isMovingTarget = targetVelocity.SqrLength() > 0;
+										isShotObstructed = (!isMovingTarget && predictionResult.distanceMoved < crosshairDistance * fixedAngleMinimumTravelRatio);
+									}
+									else
+										isShotObstructed = predictionResult.distanceMoved < crosshairDistance * fixedAngleMinimumTravelRatio;
 								}
 							}
 						}
@@ -467,19 +539,16 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 						
 				}
 
-				//if( wasPredicting && !needPrediction )
-				//	TrueHUDArrowTrail::Stop( TrueHUDArrowTrail::kPredictorTrail );
+				if( wasPredicting && !needPrediction )
+					TrueHUDArrowTrail::Stop( TrueHUDArrowTrail::kPredictorTrail );
 
 				wasPredicting = needPrediction;
 			}
 
 			if( shouldCorrectAimPitch )
 			{
-				bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
 				// Third-person model firing angle adjustment for yaw
-				if( isTDMLockedOn )
-					player->SetGraphVariableFloat( "HWYA_AimHeadingCurrent", 0.0f );
-				else if( !Settings::bDisableAimHeading )
+				if( !IsTDMLockedOn() && !Settings::bDisableAimHeading )
 					SetAimHeadingCorrection( *player, aimPos, lookTarget );
 
 				// Third-person pitch bias
@@ -532,6 +601,7 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 				}
 
 				result = currentPitch;
+				a_valid = true;
 			}
 			else
 			{
@@ -553,7 +623,34 @@ float Hooks::PlayerSetAimPitchHook::PlayerGetAimPitch( RE::AIProcess* a_process,
 
 	g_lastCameraState = currentCameraState;
 
+	// Reset aim heading variable if TDM lock-on enabled
+	if( IsTDMLockedOn() )
+		player->SetGraphVariableFloat( "BowAimOffsetHeading", 0.0f );
+
 	return result;
+}
+
+void Hooks::PlayerUpdateHook::UpdateAimPitch( RE::PlayerCharacter* a_player )
+{
+	auto process = a_player->GetActorRuntimeData().currentProcess;
+	auto nativePitch = std::bit_cast<float>( lastNativePitch.load( std::memory_order_relaxed ) );
+
+	// Reset when invalid
+	if( !process || nativePitch == FLT_MAX )
+	{
+		cachedAimPitch.store(
+			PackAimPitch( FLT_MAX, g_lastCameraState, false ),
+			std::memory_order_release );
+		return;
+	}
+
+	bool valid;
+	float result = CalculateAimPitch( process, nativePitch, valid );
+
+	// Store the result to atomic storage
+	cachedAimPitch.store(
+		PackAimPitch( result, g_lastCameraState, valid ),
+		std::memory_order_release );
 }
 
 void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, RE::NiPoint3& a_angle )
@@ -562,8 +659,7 @@ void Hooks::ProjectileInitHook::OverrideProjectileInit( RE::Projectile* a_this, 
 	if( shooter.native_handle() == 0x100000 ) // Player handle
 	{
 		// Hand over the projectile correction to TDM if locked-on
-		bool isTDMLockedOn = g_TDMAPI && g_TDMAPI->GetTargetLockState();
-		if( Settings::bEnabled && !isTDMLockedOn )
+		if( Settings::bEnabled && !IsTDMLockedOn() )
 		{
 			// Replace with HWYA angle
 			auto player = RE::PlayerCharacter::GetSingleton();

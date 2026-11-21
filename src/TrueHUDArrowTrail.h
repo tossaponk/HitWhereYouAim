@@ -131,8 +131,8 @@ public:
 		if( !ui || ui->GameIsPaused() )
 			return;
 
-		//if( GetCurrentGameRuntimeMS() >= expireTime )
-		//	return Stop();
+		if( GetCurrentGameRuntimeMS() >= expireTime )
+			return Stop();
 
 		std::scoped_lock lock( trailMutex );
 
