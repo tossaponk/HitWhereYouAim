@@ -303,6 +303,18 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 				origin = launchNode ? launchNode->world.translate : aimPos;
 			}
 
+			// Target Actor must use raycast.
+			// Beams and flamethrowers are instant. Only the visual effects are using the projectile speed for animation.
+			bool isInstant =
+				( spell && spell->GetDelivery() == RE::MagicSystem::Delivery::kTargetActor ) ||
+				projectileBase->IsBeam() ||
+				projectileBase->IsFlamethrower();
+
+			if( isInstant )
+			{
+				projectileSpeed = instantProjectileSpeed;
+				projectileGravity = 0.0f;
+			}
 			
 			Ballistics::ResolveCrosshairAim(
 				aimPos,
