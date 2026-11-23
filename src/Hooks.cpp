@@ -515,7 +515,11 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 						RE::NiPoint3 rayDirection = targetLocation - origin;
 						if( rayDirection.Unitize() > 0.0001f )
 						{
-							float rayRange = isTargetActor ? Native::GetSpellRaycastMaxRange() : Settings::fMaximumTargetDistance * meterToGameUnit;
+							// Use spell range if defined. Fall back to the game default range if not set.
+							float spellRange = spell ? spell->GetRange() : 0.0f;
+							float rayRange = isTargetActor ?
+								( spellRange > 0.0f ? spellRange : Native::GetSpellRaycastMaxRange() ) :
+								Settings::fMaximumTargetDistance * meterToGameUnit;
 							RE::NiPoint3 rayEnd = origin + rayDirection * rayRange;
 
 							rayTarget = Raycast::GetTarget(
