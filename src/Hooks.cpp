@@ -394,6 +394,7 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 				bool isReachabilitySupported = projectileBase->data.types.any(
 					RE::BGSProjectileData::Type::kArrow,
 					RE::BGSProjectileData::Type::kBeam,
+					RE::BGSProjectileData::Type::kFlamethrower,
 					RE::BGSProjectileData::Type::kMissile );
 
 				bool isDrawingBow =
@@ -415,8 +416,7 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 				{
 					bool isShotObstructed = false;
 					bool isTargetActor = delivery == RE::MagicSystem::Delivery::kTargetActor;
-					bool isBeam = projectileBase->IsBeam();
-					bool shouldUseRaycast = isTargetActor || isBeam;
+					bool shouldUseRaycast = isTargetActor || projectileBase->IsBeam() || projectileBase->IsFlamethrower();
 
 					if( !shouldUseRaycast )
 					{
@@ -515,7 +515,8 @@ float Hooks::PlayerUpdateHook::CalculateAimPitch( RE::AIProcess* a_process, cons
 						RE::NiPoint3 rayDirection = targetLocation - origin;
 						if( rayDirection.Unitize() > 0.0001f )
 						{
-							RE::NiPoint3 rayEnd = origin + rayDirection * Settings::fMaximumTargetDistance * meterToGameUnit;
+							float rayRange = isTargetActor ? Native::GetSpellRaycastMaxRange() : Settings::fMaximumTargetDistance * meterToGameUnit;
+							RE::NiPoint3 rayEnd = origin + rayDirection * rayRange;
 
 							rayTarget = Raycast::GetTarget(
 								origin,

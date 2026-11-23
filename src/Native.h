@@ -34,6 +34,13 @@ namespace Native
 	}
 
 	[[maybe_unused]]
+	inline float GetSpellRaycastMaxRange()
+	{
+		static REL::Relocation<const float*> maxRange{ RELOCATION_ID( 257760, 205912 ) };
+		return *maxRange;
+	}
+
+	[[maybe_unused]]
 	inline RE::NiPoint3* CalculatePredictedProjectileAimPoint( RE::NiPoint3* a_outAimPoint, RE::NiPoint3* a_origin, RE::NiPoint3* a_targetPosition, RE::NiPoint3* a_targetVelocity,
 		float a_projectileSpeed, float a_gravity, bool a_highArc )
 	{
