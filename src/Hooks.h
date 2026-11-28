@@ -386,6 +386,31 @@ namespace Hooks
 		}
 	};
 
+	struct PredictorPerkApplySpellHook
+	{
+		static void thunk( RE::Actor* a_target, RE::MagicItem* a_spell )
+		{
+			if( ProjectilePrediction::IsSimulatingPredictor() )
+				return;
+
+			func( a_target, a_spell );
+		}
+
+		static inline REL::Relocation<decltype(thunk)> func;
+		static void Install()
+		{
+			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 42547, 43710 ),
+				"48 8B 54 24 ?? 48 85 D2 74 ?? 4C 8B ?? ?? ?? ?? ?? 4D 8B C6 ?? ?? ?? E8 ?? ?? ?? ??", 0x17, "E8" );
+
+			if( !addr )
+			{
+				REX::FAIL( "Cannot find target instruction for PredictorPerkApplySpellHook" );
+			}
+
+			stl::write_thunk_call<PredictorPerkApplySpellHook>( addr );
+		}
+	};
+
 	// Precision and OAR improperly dereference destroyed game-owned objects during CRT shutdown.
 	// This is harmless to users, but suppress the noisy exceptions in Debug builds.
 	struct ExternalExitFix

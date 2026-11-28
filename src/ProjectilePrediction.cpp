@@ -8,6 +8,29 @@
 
 thread_local bool g_nativeTeardownRequested = false;
 
+namespace
+{
+	thread_local bool simulatingPredictor = false;
+
+	class PredictorSimulationScope
+	{
+	public:
+		PredictorSimulationScope()
+		{
+			assert( !simulatingPredictor );
+			simulatingPredictor = true;
+		}
+
+		~PredictorSimulationScope()
+		{
+			simulatingPredictor = false;
+		}
+
+		PredictorSimulationScope( const PredictorSimulationScope& ) = delete;
+		PredictorSimulationScope& operator=( const PredictorSimulationScope& ) = delete;
+	};
+}
+
 struct alignas( 16 ) SimpleShapePhantomCInfo
 {
 	uint32_t collisionFilterInfo;  // 00
@@ -272,6 +295,11 @@ void ProjectilePrediction::InvalidatePredictorCache()
 	PredictorPoolManager::GetSingleton()->Invalidate();
 }
 
+bool ProjectilePrediction::IsSimulatingPredictor()
+{
+	return simulatingPredictor;
+}
+
 ProjectilePrediction::PredictorPoolManager* ProjectilePrediction::PredictorPoolManager::GetSingleton()
 {
 	static PredictorPoolManager singleton;
@@ -508,7 +536,11 @@ ProjectilePredictionResult ProjectilePrediction::Predictor::Predict( const RE::P
 
 				PredictorTelemetry::GetSingleton()->RecordPredictionStep();
 
-				updateMovementAndCollision( predictor, currentTimeStep );
+				// TLS Scoped predictor simulation capture to prevent perk bound on-hit spell firing from the predictor
+				{
+					PredictorSimulationScope simulating;
+					updateMovementAndCollision( predictor, currentTimeStep );
+				}
 
 				if( !predictorRuntime.impacts.empty() )
 				{

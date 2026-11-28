@@ -104,6 +104,7 @@ namespace ProjectilePrediction
 
 	void CleanUpPredictorCache();
 	void InvalidatePredictorCache();
+	bool IsSimulatingPredictor();
 
 	class OriginCalibration
 	{

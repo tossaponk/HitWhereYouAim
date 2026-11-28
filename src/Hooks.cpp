@@ -20,6 +20,7 @@ bool Hooks::Install()
 	SpellTargetFinderHook::Install();
 	PredictorGetKillOnCollisionHook::Install();
 	PredictorCheckSaveGameHook::Install();
+	PredictorPerkApplySpellHook::Install();
 	QuitGameHook::Install();
 
 	//Test::SetGraphVarFloatHook::Install();
