@@ -98,6 +98,7 @@ struct Settings
 	static inline bool			bEnabledTargetLeading;
 	static inline float				fMaxLeadingAngle;
 	static inline bool		bTargetDepthPrediction;
+	static inline bool		bIgnoreBehindOrigin;
 	static inline float		fPredictionWindowWidth;
 	static inline float		fPredictionWindowHeight;
 	static inline bool		bInheritVelocity;

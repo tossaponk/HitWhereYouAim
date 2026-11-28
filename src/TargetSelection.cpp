@@ -14,68 +14,68 @@ float Cross2D( const RE::NiPoint2& a_origin, const RE::NiPoint2& a_point1, const
 
 ProjectedBounds TargetSelection::ProjectReferenceBoundsToScreen( const RE::NiCamera* a_camera, const RE::TESObjectREFR* a_ref, float a_predictionTime, float a_nearThreshold )
 {
-    ProjectedBounds result;
+	ProjectedBounds result;
 
-    if( a_camera && a_ref )
-    {
-        auto ref3D = a_ref->Get3D2();
-        if( ref3D )
-        {
-            RE::NiBound bound = ref3D->worldBound;
-            RE::NiPoint3 moveDelta{ 0, 0, 0 };
+	if( a_camera && a_ref )
+	{
+		auto ref3D = a_ref->Get3D2();
+		if( ref3D )
+		{
+			RE::NiBound bound = ref3D->worldBound;
+			RE::NiPoint3 moveDelta{ 0, 0, 0 };
 
-            // Predict future position before projecting onto the screen
-            RE::NiPoint3 velocity;
-            a_ref->GetLinearVelocity( velocity );
-            moveDelta = velocity * a_predictionTime;
+			// Predict future position before projecting onto the screen
+			RE::NiPoint3 velocity;
+			a_ref->GetLinearVelocity( velocity );
+			moveDelta = velocity * a_predictionTime;
 
-            bound.center.x = a_ref->GetPositionX();
-            bound.center.y = a_ref->GetPositionY();
-            bound.center += moveDelta;
+			bound.center.x = a_ref->GetPositionX();
+			bound.center.y = a_ref->GetPositionY();
+			bound.center += moveDelta;
 
-            float normalizedX;
-            float normalizedY;
-            float depth;
+			float normalizedX;
+			float normalizedY;
+			float depth;
 
-            if( !RE::NiCamera::WorldPtToScreenPt3(
-                a_camera->GetRuntimeData().worldToCam,
-                a_camera->GetRuntimeData2().port,
-                bound.center,
-                normalizedX,
-                normalizedY,
-                depth,
-                1.0e-5f ) )
-            {
-                return result;
-            }
+			if( !RE::NiCamera::WorldPtToScreenPt3(
+				a_camera->GetRuntimeData().worldToCam,
+				a_camera->GetRuntimeData2().port,
+				bound.center,
+				normalizedX,
+				normalizedY,
+				depth,
+				1.0e-5f ) )
+			{
+				return result;
+			}
 
-            if( depth <= 0.0f || depth >= 1.0f )
-                return result;
+			if( depth <= 0.0f || depth >= 1.0f )
+				return result;
 
-            RE::NiPoint3 projectedYMin, projectedYMax;
-            Native::ProjectBoundToScreen( a_camera, bound, projectedYMin, projectedYMax, a_nearThreshold );
+			RE::NiPoint3 projectedYMin, projectedYMax;
+			Native::ProjectBoundToScreen( a_camera, bound, projectedYMin, projectedYMax, a_nearThreshold );
 
-            bound.radius = a_ref->GetBoundMax().x;
-            RE::NiPoint3 projectedXMin, projectedXMax;
-            Native::ProjectBoundToScreen( a_camera, bound, projectedXMin, projectedXMax, a_nearThreshold );
+			bound.radius = a_ref->GetBoundMax().x;
+			RE::NiPoint3 projectedXMin, projectedXMax;
+			Native::ProjectBoundToScreen( a_camera, bound, projectedXMin, projectedXMax, a_nearThreshold );
 
-            if( projectedXMin.x == -1.0f && projectedXMax.x == 1.0f )
-                return result;
+			if( projectedXMin.x == -1.0f && projectedXMax.x == 1.0f )
+				return result;
 
-            if( projectedYMin.y == -1.0f && projectedYMax.y == 1.0f )
-                return result;
+			if( projectedYMin.y == -1.0f && projectedYMax.y == 1.0f )
+				return result;
 
-            result.min.x = projectedXMin.x;
-            result.min.y = projectedYMin.y;
+			result.min.x = projectedXMin.x;
+			result.min.y = projectedYMin.y;
 
-            result.max.x = projectedXMax.x;
-            result.max.y = projectedYMax.y;
+			result.max.x = projectedXMax.x;
+			result.max.y = projectedYMax.y;
 
-            result.valid = true;
-        }
-    }
+			result.valid = true;
+		}
+	}
 
-    return result;
+	return result;
 }
 
 ProjectedSweep TargetSelection::GetProjectedSweep( const ProjectedBounds& a_currentBounds, const ProjectedBounds& a_predictedBounds )
@@ -274,6 +274,16 @@ std::pair<RE::TESObjectREFR*, RE::NiPoint3> TargetSelection::GetPotentialPlayerT
 
 	RE::NiPoint3 origin = a_fireOrigin ? *a_fireOrigin : player->GetPosition();
 
+	auto screenSize = RE::BSGraphics::Renderer::GetSingleton()->GetScreenSize();
+
+	RE::NiPoint3 cameraOrigin, cameraDirection;
+
+	auto screenHalfWidth = screenSize.width / 2;
+	auto screenHalfHeight = screenSize.height / 2;
+	int32_t crosshairX = (int32_t)( screenHalfWidth + ( Settings::fCrosshairPosX * screenHalfWidth ) );
+	int32_t crosshairY = (int32_t)( screenHalfHeight + ( Settings::fCrosshairPosY * screenHalfHeight ) );
+	camera->WindowPointToRay( crosshairX, crosshairY, cameraOrigin, cameraDirection, (float)screenSize.width, (float)screenSize.height );
+
 	RE::Actor* targetCandidate = nullptr;
 	RE::NiPoint3 targetMoveDelta{ 0, 0, 0 };
 	bool bestContainsCrosshair = false;
@@ -335,6 +345,10 @@ std::pair<RE::TESObjectREFR*, RE::NiPoint3> TargetSelection::GetPotentialPlayerT
 			RE::NiPoint3 currentTargetPosition = bound.center;
 			currentTargetPosition.x = highActor->GetPositionX();
 			currentTargetPosition.y = highActor->GetPositionY();
+
+			// Reject target behind the fire origin
+			if( Settings::bIgnoreBehindOrigin && ( currentTargetPosition - origin ).Dot( cameraDirection ) <= 0 )
+				continue;
 
 			RE::NiPoint3 predictedTargetPosition = currentTargetPosition + moveDelta;
 			auto friendlyCurrentBounds = GetHorizontallyInsetBounds( currentBounds, 0.1f );

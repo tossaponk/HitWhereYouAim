@@ -17,6 +17,7 @@ void Settings::Load()
 	settings->RegisterBinding( { &iPitchCorrectionMode,		Settings::BindingType::kInteger,	"Main", "iPitchCorrectionMode",			1 } );
 	settings->RegisterBinding( { &fPitchOffsetDegree,		Settings::BindingType::kFloat,		"Main", "fPitchOffsetDegree",			0.7f } );
 	settings->RegisterBinding( { &bTargetDepthPrediction,	Settings::BindingType::kBoolean,	"Main", "bTargetDepthPrediction",		true } );
+	settings->RegisterBinding( { &bIgnoreBehindOrigin,		Settings::BindingType::kBoolean,	"Main", "bIgnoreBehindOrigin",			true } );
 	settings->RegisterBinding( { &fPredictionWindowWidth,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowWidth",		0.5f } );
 	settings->RegisterBinding( { &fPredictionWindowHeight,	Settings::BindingType::kFloat,		"Main", "fPredictionWindowHeight",		0.5f } );
 	settings->RegisterBinding( { &bEnabledTargetLeading,	Settings::BindingType::kBoolean,	"Main", "bEnabledTargetLeading",		true } );

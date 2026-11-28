@@ -3,6 +3,7 @@
 #include "Settings.h"
 #include "TrueHUDArrowTrail.h"
 #include "Crosshair.h"
+#include "Ballistics.h"
 #include "PredictorTelemetry.h"
 
 struct CrosshairRaycastCache
@@ -106,8 +107,22 @@ RE::TESObjectREFR* Raycast::GetScreenTarget( uint32_t a_x, uint32_t a_y, uint32_
 	RE::NiPoint3 origin, direction;
 	camera->WindowPointToRay( a_x, a_y, origin, direction, (float)screenSize.width, (float)screenSize.height );
 
+	RE::NiPoint3 rayOrigin = origin;
+	// Shift the ray start position forward to the aiming plane to avoid behind player targeting
+	if( Settings::bIgnoreBehindOrigin )
+	{
+		auto aimOrigin = Ballistics::GetPlayerAimPosition();
+		float directionLengthSquared = direction.SqrLength();
+		if( directionLengthSquared > 0.0f )
+		{
+			float distanceToFirePlane = ( aimOrigin - rayOrigin ).Dot( direction ) / directionLengthSquared;
+			if( distanceToFirePlane > 0.0f )
+				rayOrigin += direction * distanceToFirePlane;
+		}
+	}
+
 	RE::NiPoint3 target = camera->world.translate + direction * a_maxDistance;
-	return GetTarget( camera->world.translate, target, a_collisionGroup, a_collisionLayer, out_hitLocation, out_pickData );
+	return GetTarget( rayOrigin, target, a_collisionGroup, a_collisionLayer, out_hitLocation, out_pickData );
 }
 
 RE::TESObjectREFR* Raycast::GetCrosshairTarget( uint32_t a_collisionGroup, RE::COL_LAYER a_collisionLayer, RE::NiPoint3* out_hitLocation, RE::bhkPickData* out_pickData )
