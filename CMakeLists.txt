@@ -9,7 +9,7 @@ endif()
 message(STATUS "vcpkg overlay ports: ${VCPKG_OVERLAY_PORTS}")
 
 set(PLUGIN_NAME "HitWhereYouAim")
-set(PLUGIN_VERSION "1.4.6")
+set(PLUGIN_VERSION "1.4.7")
 set(PLUGIN_AUTHOR "Tossapon")
 set(PLUGIN_DESCRIPTION "A crosshair aim correction plugin")
 
