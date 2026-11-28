@@ -27,7 +27,7 @@ namespace Hooks
 		static inline REL::Relocation<decltype(thunk)> func;
 		static void Install()
 		{
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW(43009,44200), 
+			auto addr = util::GetInjectionAddress( RELOCATION_ID(43009,44200), 
 				"F3 0F 11 ?? 24 38 F3 0F 11 ?? 24 30 48 89 ?? 24 28 48 89 ?? 24 20 4C 8B C5 48 8B D7 48 8B 0D ?? ?? ?? ?? E8", 0x23, "E8" );
 
 			if( !addr )
@@ -55,7 +55,7 @@ namespace Hooks
 		static inline uintptr_t funcYawBeam;
 		static void Install()
 		{
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW(42727,43894), 
+			auto addr = util::GetInjectionAddress( RELOCATION_ID(42727,43894), 
 				"48 8B CD E8 ?? ?? ?? ?? 0F 28 C8 48 8B CE E8 ?? ?? ?? ?? 48 8B CD E8 ?? ?? ?? ?? 0F 28 C8 48 8B CE E8 ?? ?? ?? ??" );
 
 			if( !addr )
@@ -65,7 +65,7 @@ namespace Hooks
 			funcYawFlame = trampoline.write_call<5>( addr + 0xE, SetAimYawFlame );
 			funcPitchFlame = trampoline.write_call<5>( addr + 0x21, SetAimPitchFlame );
 
-			addr = util::GetInjectionAddress( RELOCATION_RAW(42586,43749), 
+			addr = util::GetInjectionAddress( RELOCATION_ID(42586,43749), 
 				"49 8B CE E8 ?? ?? ?? ?? 0F 28 C8 48 8B CE E8 ?? ?? ?? ?? 49 8B CE E8 ?? ?? ?? ?? 0F 28 C8 48 8B CE E8 ?? ?? ?? ??" );
 
 			if( !addr )
@@ -97,13 +97,13 @@ namespace Hooks
 
 			// First shared target-finder call: Target Location
 			// 1.6.1170 SkyrimSE.exe+5BC46F
-			auto addrLocation = util::GetInjectionAddress( RELOCATION_RAW( 33632, 34410 ),
+			auto addrLocation = util::GetInjectionAddress( RELOCATION_ID( 33632, 34410 ),
 				"48 89 ?? 24 ?? 48 8D 44 24 ?? 48 89 ?? 24 ?? 4C 8D 4C 24 ?? 48 8B ?? E8 ?? ?? ?? ??",
 				0x17, "E8" );
 
 			// Second shared target-finder call: Target Actor (test rax,rax at the end)
 			// 1.6.1170 SkyrimSE.exe+5BC892
-			auto addrActor = util::GetInjectionAddress( RELOCATION_RAW( 33632, 34410 ),
+			auto addrActor = util::GetInjectionAddress( RELOCATION_ID( 33632, 34410 ),
 				"48 89 ?? 24 ?? 48 8D 44 24 ?? 48 89 ?? 24 ?? 4C 8D 4C 24 ?? 48 8B ?? E8 ?? ?? ?? ?? 48 85 C0",
 				0x17, "E8" );
 
@@ -163,7 +163,7 @@ namespace Hooks
 			// SE 33677
 			// 1.6.1170 SkyrimSE.exe+5C08BB
 			//auto addr = REL::Relocation( REL::ID( 34457 ), 0x44B ).address();
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33677, 34457 ),
+			auto addr = util::GetInjectionAddress( RELOCATION_ID( 33677, 34457 ),
 				"48 8B 05 ?? ?? ?? ?? 49 8B ?? 48 8B ?? 60 E8 ?? ?? ?? ?? F3 0F 10 05 ?? ?? ?? ??", 0x0E, "E8" );
 
 			if( !addr )
@@ -188,7 +188,7 @@ namespace Hooks
 		{
 			// 1.6.1170 SkyrimSE.exe+5C0524
 			//auto addr = REL::Relocation( REL::ID( 34457 ), 0xB4 ).address();
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33677, 34457 ), "48 8D 54 24 ?? 48 8D ?? ?? ?? ?? ?? E8 ?? ?? ?? ??", 0x0C, "E8" );
+			auto addr = util::GetInjectionAddress( RELOCATION_ID( 33677, 34457 ), "48 8D 54 24 ?? 48 8D ?? ?? ?? ?? ?? E8 ?? ?? ?? ??", 0x0C, "E8" );
 
 			if( !addr )
 				REX::FAIL( "Cannot find target instruction for MagicCasterGetCrosshairActorHook" );
@@ -399,7 +399,7 @@ namespace Hooks
 		static inline REL::Relocation<decltype(thunk)> func;
 		static void Install()
 		{
-			auto addr = util::GetInjectionAddress( RELOCATION_RAW( 42547, 43710 ),
+			auto addr = util::GetInjectionAddress( RELOCATION_ID( 42547, 43710 ),
 				"48 8B 54 24 ?? 48 85 D2 74 ?? 4C 8B ?? ?? ?? ?? ?? 4D 8B C6 ?? ?? ?? E8 ?? ?? ?? ??", 0x17, "E8" );
 
 			if( !addr )
@@ -576,7 +576,7 @@ namespace Hooks
 			static void Install()
 			{
 				//auto addr = REL::Relocation<uintptr_t>( RELOCATION_ID(40574,40574), 0x15B ).address(); //0x79B7DF
-				auto addr = util::GetInjectionAddress( RELOCATION_RAW(39495,40574), 
+				auto addr = util::GetInjectionAddress( RELOCATION_ID(39495,40574), 
 					"85 C0 C6 44 24 20 00 4C 8B CB 48 8B CF 41 0F 95 C0 33 D2 E8 ?? ?? ?? ?? 48", 0x13, "E8" );
 
 				if( !addr )
@@ -685,7 +685,7 @@ namespace Hooks
 				// SE 33629
 				// 1.6.1170 SkyrimSE.exe+5BBE24
 				//auto addr = REL::Relocation( REL::ID( 34407 ), 0xE4 ).address();
-				auto addr = util::GetInjectionAddress( RELOCATION_RAW( 33629, 34407 ),
+				auto addr = util::GetInjectionAddress( RELOCATION_ID( 33629, 34407 ),
 					"4C 8D 44 24 ?? C6 44 24 ?? 00 4D 8B ?? 48 8B ?? C6 44 24 ?? 00 C7 44 24 ?? 00 00 00 00 E8 ?? ?? ?? ?? 84 C0",
 					0x1D, "E8" );
 

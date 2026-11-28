@@ -221,6 +221,25 @@ namespace util
 
 		return NULL;
 	}
+
+	static uintptr_t GetInjectionAddress( REL::RelocationID a_relocation, const char* a_pattern, uint64_t a_offset = 0, const char* a_targetInstruction = NULL )
+	{
+		auto addr = FindPatternInFunction( a_relocation.address(), a_pattern );
+		if( addr )
+		{
+			addr += a_offset;
+			if( a_targetInstruction )
+			{
+				auto targetCheck = FindPatternInFunction( addr, a_targetInstruction, 6 );
+				if( targetCheck != addr )
+					return NULL;
+			}
+
+			return addr;
+		}
+
+		return NULL;
+	}
 }
 
 class Profiler
